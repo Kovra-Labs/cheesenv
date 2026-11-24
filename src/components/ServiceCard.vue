@@ -2,13 +2,15 @@
 import { computed, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { api, isAppError, type ServiceInfo } from '../api';
-import { attempt, toast, toastError } from '../store';
+import { attempt, reloadServices, toast, toastError } from '../store';
 import StatusBadge from './StatusBadge.vue';
+import CredentialsPanel from './CredentialsPanel.vue';
 
 const props = defineProps<{ service: ServiceInfo; detailed?: boolean }>();
 const { t } = useI18n();
 
 const busy = ref(false);
+const showCreds = ref(false);
 const conflict = ref<{ port: number; suggestion: number | null } | null>(null);
 const portInput = ref<number | null>(props.service.port);
 watch(
@@ -33,6 +35,8 @@ function start() {
     conflict.value = null;
     try {
       await api.startService(props.service.id);
+      // First start may have initialised the database (credentials now exist).
+      if (!props.service.initialized) await reloadServices();
     } catch (e) {
       if (isAppError(e) && e.code === 'PORT_IN_USE' && e.port) {
         conflict.value = { port: e.port, suggestion: e.suggestion ?? null };
@@ -55,6 +59,7 @@ async function savePort(port: number | null) {
   await run(async () => {
     const ok = await attempt(() => api.setServiceOptions(props.service.id, { port }));
     if (ok) {
+      await reloadServices();
       toast(t('services.portSaved'));
       const check = await api.checkPort(port).catch(() => null);
       if (check && !check.free) conflict.value = { port, suggestion: check.suggestion };
@@ -92,7 +97,12 @@ const setAutostart = (v: boolean) => attempt(() => api.setServiceOptions(props.s
       <button v-if="service.status === 'running' && service.category === 'web-server'" class="btn small" @click="open">
         {{ t('services.openBrowser') }}
       </button>
-      <button v-if="!active" class="btn small primary" :disabled="busy" @click="start">{{ t('common.start') }}</button>
+      <button v-if="service.credentials_user" class="btn small" :aria-expanded="showCreds" @click="showCreds = !showCreds">
+        {{ t('services.credentials') }}
+      </button>
+      <button v-if="!active" class="btn small primary" :disabled="busy" @click="start">
+        {{ busy && !service.initialized ? t('services.initializing') : t('common.start') }}
+      </button>
       <template v-else>
         <button class="btn small" :disabled="busy || service.status !== 'running'" @click="restart">
           {{ t('common.restart') }}
@@ -102,6 +112,10 @@ const setAutostart = (v: boolean) => attempt(() => api.setServiceOptions(props.s
         </button>
       </template>
     </div>
+
+    <p v-if="!service.initialized && !active" class="hint full">{{ t('services.firstStart') }}</p>
+
+    <CredentialsPanel v-if="showCreds && service.credentials_user" :key="`${service.initialized}`" class="full" :service="service" />
 
     <div v-if="conflict" class="conflict" role="alert">
       <span>{{ t('services.portBusy', { port: conflict.port }) }}</span>
@@ -162,6 +176,7 @@ const setAutostart = (v: boolean) => attempt(() => api.setServiceOptions(props.s
 }
 
 .conflict,
+.full,
 .svc-detail {
   grid-column: 1 / -1;
 }

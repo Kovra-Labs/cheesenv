@@ -8,7 +8,8 @@ use crate::error::{AppError, AppResult};
 pub fn extract(archive: &Path, format: &str, dest: &Path, strip: usize, bin_name: &str) -> AppResult<()> {
     let root = dest.canonicalize()?;
     match format {
-        "tar.gz" => extract_tar_gz(archive, &root, strip),
+        "tar.gz" => extract_tar(flate2::read::GzDecoder::new(File::open(archive)?), &root, strip),
+        "tar.xz" => extract_tar(liblzma::read::XzDecoder::new(File::open(archive)?), &root, strip),
         "zip" => extract_zip(archive, &root, strip),
         "binary" => {
             let out = root.join(bin_name);
@@ -80,9 +81,8 @@ fn link_stays_inside(base: &Path, target: &Path) -> bool {
     true
 }
 
-fn extract_tar_gz(archive: &Path, root: &Path, strip: usize) -> AppResult<()> {
-    let gz = flate2::read::GzDecoder::new(File::open(archive)?);
-    let mut ar = tar::Archive::new(gz);
+fn extract_tar(stream: impl std::io::Read, root: &Path, strip: usize) -> AppResult<()> {
+    let mut ar = tar::Archive::new(stream);
     ar.set_preserve_permissions(true);
     ar.set_overwrite(true);
     for entry in ar.entries()? {
@@ -226,6 +226,19 @@ mod tests {
         let bad = zip_with(&[("../../evil.txt", b"x")]);
         let r = extract(&bad.path().join("a.zip"), "zip", &bad.path().join("out"), 0, "");
         assert!(matches!(r, Err(AppError::UnsafeArchive(_))));
+    }
+
+    #[test]
+    fn tar_xz_extracts() {
+        let dir = tempfile::tempdir().unwrap();
+        let f = File::create(dir.path().join("a.tar.xz")).unwrap();
+        let mut b = tar::Builder::new(liblzma::write::XzEncoder::new(f, 1));
+        b.append(&file_header("mysql-8/bin/mysqld", 2), &b"ok"[..]).unwrap();
+        b.into_inner().unwrap().finish().unwrap();
+        let out = dir.path().join("out");
+        std::fs::create_dir(&out).unwrap();
+        extract(&dir.path().join("a.tar.xz"), "tar.xz", &out, 1, "").unwrap();
+        assert_eq!(std::fs::read(out.join("bin/mysqld")).unwrap(), b"ok");
     }
 
     #[test]

@@ -63,6 +63,16 @@ export interface ServiceInfo {
   recent_crashes: number;
   port: number | null;
   autostart: boolean;
+  credentials_user: string | null;
+  initialized: boolean;
+}
+
+export interface Credentials {
+  user: string;
+  password: string;
+  host: string;
+  port: number | null;
+  storage: 'keychain' | 'file';
 }
 
 export interface ServiceSnapshot {
@@ -147,6 +157,7 @@ export const api = {
   stopAll: () => invoke<void>('stop_all'),
   setServiceOptions: (id: string, opts: { port?: number; autostart?: boolean }) =>
     invoke<ServiceInfo>('set_service_options', { id, port: opts.port ?? null, autostart: opts.autostart ?? null }),
+  getCredentials: (id: string) => invoke<Credentials>('get_credentials', { id }),
   checkPort: (port: number) => invoke<PortCheck>('check_port', { port }),
 
   listLogs: () => invoke<LogFile[]>('list_logs'),

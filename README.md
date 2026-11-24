@@ -16,7 +16,7 @@ Aplikasi desktop lintas platform (Windows, macOS, Linux) untuk mengelola environ
 - System tray; menutup jendela tidak mematikan service. Keluar dari tray menghentikan semua service.
 - UI Bahasa Indonesia & Inggris, tema terang/gelap/sistem.
 
-Module di registry contoh: **nginx 1.30.5** (Windows/macOS/Linux, x64/arm64) dan **PHP-FPM 8.4 / 8.3** (macOS/Linux).
+Module di registry contoh: **nginx 1.30.5** (Windows/macOS/Linux, x64/arm64), **PHP-FPM 8.4 / 8.3** (macOS/Linux), **MySQL 8.4 LTS** (Linux x64, macOS 15+, Windows) dan **PostgreSQL 18 / 17** (semua platform). Database diinisialisasi otomatis saat start pertama; password root dibuat acak dan disimpan di keychain OS (lihat tombol **Kredensial** di halaman Service).
 
 ## Pengembangan
 

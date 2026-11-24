@@ -276,6 +276,9 @@ pub struct ServiceInfo {
     recent_crashes: usize,
     port: Option<u16>,
     autostart: bool,
+    /// Database login user, when the module generates credentials.
+    credentials_user: Option<String>,
+    initialized: bool,
 }
 
 async fn service_info(state: &AppState, m: &InstalledModule) -> Option<ServiceInfo> {
@@ -292,6 +295,8 @@ async fn service_info(state: &AppState, m: &InstalledModule) -> Option<ServiceIn
         pid: snap.pid,
         started_at: snap.started_at,
         recent_crashes: snap.recent_crashes,
+        credentials_user: spec.credentials.as_ref().map(|c| c.user.clone()),
+        initialized: spec.init.is_none() || modules::is_initialized(&state.layout(), m),
         id,
     })
 }
@@ -322,14 +327,41 @@ pub async fn start_service_inner(state: &AppState, id: &str) -> AppResult<()> {
     if state.supervisor.is_active(id).await {
         return Ok(());
     }
-    let (launch, port, _) = state.launch_for(id)?;
+    let (launch, port, m) = state.launch_for(id)?;
     if let Some(port) = port {
         if !ports::is_free(port) {
             let suggestion = ports::suggest(port, &reserved_ports(state, id));
             return Err(AppError::PortInUse { port, suggestion });
         }
     }
+    let layout = state.layout();
+    if !modules::is_initialized(&layout, &m) && m.service.as_ref().is_some_and(|s| s.init.is_some()) {
+        // Same guard as install/uninstall: one init per module at a time.
+        let _guard = BusyGuard::acquire(state, &m.name)?;
+        modules::initialize(&layout, &m, port, &launch.log_file).await?;
+    }
     state.supervisor.start(launch).await
+}
+
+#[derive(Serialize)]
+pub struct Credentials {
+    user: String,
+    password: String,
+    host: &'static str,
+    port: Option<u16>,
+    storage: crate::secrets::Storage,
+}
+
+/// Returns the generated database login. Only Stackyard's own services.
+#[tauri::command]
+pub fn get_credentials(state: State<'_, AppState>, id: String) -> Cmd<Credentials> {
+    let (name, version) = parse_service_id(&id)?;
+    let layout = state.layout();
+    let m = modules::load_installed(&layout, &name, &version)?;
+    let spec = m.service.as_ref().ok_or(AppError::NoService)?;
+    let user = spec.credentials.as_ref().ok_or(AppError::NoService)?.user.clone();
+    let (password, storage) = crate::secrets::load(&layout, &name, &version)?;
+    Ok(Credentials { user, password, host: "127.0.0.1", port: state.port_for(&id, spec), storage })
 }
 
 #[tauri::command]

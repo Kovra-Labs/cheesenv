@@ -26,6 +26,7 @@
     "allow-clear-log",
     "allow-open-service-url",
     "allow-open-folder",
+    "allow-get-credentials",
     "allow-check-update",
     "allow-install-update"
   ]

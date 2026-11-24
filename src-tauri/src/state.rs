@@ -53,17 +53,11 @@ impl AppState {
         modules::write_configs(&layout, &m, port, false)?;
 
         let vars = modules::template_vars(&layout, &m, port);
-        let mut args = spec.args().iter().map(|a| modules::render(a, &vars));
-        let program = PathBuf::from(args.next().ok_or(AppError::NoService)?);
-        // A manifest may only launch executables shipped inside its own module.
-        let module_dir = layout.module_dir(&name, &version);
-        if !program.starts_with(&module_dir) || program.components().any(|c| c == std::path::Component::ParentDir) {
-            return Err(AppError::InvalidInput("service program outside module".into()));
-        }
+        let (program, args) = modules::resolve_command(&layout, &m, spec.args(), &vars)?;
         let launch = Launch {
             id: id.to_string(),
             program,
-            args: args.collect(),
+            args,
             cwd: layout.conf_dir(&name, &version),
             log_file: layout.logs().join(format!("{name}-{version}.log")),
             auto_restart: self.settings().auto_restart,

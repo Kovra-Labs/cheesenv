@@ -21,6 +21,7 @@ const COMMANDS: &[&str] = &[
     "clear_log",
     "open_service_url",
     "open_folder",
+    "get_credentials",
     "check_update",
     "install_update",
 ];

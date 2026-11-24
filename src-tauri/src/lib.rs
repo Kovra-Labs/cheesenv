@@ -7,6 +7,7 @@ mod modules;
 mod paths;
 mod ports;
 mod registry;
+mod secrets;
 mod settings;
 mod state;
 mod supervisor;
@@ -101,6 +102,7 @@ pub fn run() {
             commands::clear_log,
             commands::open_service_url,
             commands::open_folder,
+            commands::get_credentials,
             updater::check_update,
             updater::install_update,
         ])
@@ -197,8 +199,92 @@ mod e2e {
         assert_eq!(st.supervisor.snapshot(&php).await.status, Status::Stopped);
         assert!(ports::is_free(9000), "php-fpm stopped (no orphan workers)");
 
-        let (n, v) = paths::parse_service_id(&php).unwrap();
-        modules::uninstall(&st.layout(), &n, &v, false).unwrap();
-        assert!(!st.layout().module_dir(&n, &v).exists());
+        for id in [&php, &nginx] {
+            let (n, v) = paths::parse_service_id(id).unwrap();
+            modules::uninstall(&st.layout(), &n, &v, false).unwrap();
+            assert!(!st.layout().module_dir(&n, &v).exists());
+            assert!(!st.layout().socket_dir(&n, &v).exists());
+        }
+    }
+
+    fn client(st: &AppState, id: &str, bin: &str) -> std::path::PathBuf {
+        let (n, v) = paths::parse_service_id(id).unwrap();
+        st.layout().module_dir(&n, &v).join("bin").join(bin)
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn databases_init_auth_restart() {
+        let Ok(url) = std::env::var("STACKYARD_E2E_REGISTRY") else { return };
+        let tmp = tempfile::tempdir().unwrap();
+        let st = state(tmp.path(), &url);
+        st.layout().ensure().unwrap();
+
+        let mysql = install(&st, "mysql").await;
+        let pg = install(&st, "postgresql").await;
+        // Non-default ports so a system MySQL/PostgreSQL never interferes.
+        st.update_settings(|s| {
+            s.set_service(&mysql, settings::ServiceSettings { port: Some(53306), autostart: false })?;
+            s.set_service(&pg, settings::ServiceSettings { port: Some(55432), autostart: false })
+        })
+        .unwrap();
+        let layout = st.layout();
+        for id in [&mysql, &pg] {
+            let (n, v) = paths::parse_service_id(id).unwrap();
+            let m = modules::load_installed(&layout, &n, &v).unwrap();
+            modules::write_configs(&layout, &m, st.port_for(id, m.service.as_ref().unwrap()), true).unwrap();
+            commands::start_service_inner(&st, id).await.expect("init + start");
+            assert!(modules::is_initialized(&layout, &m), "{id} initialised");
+            assert!(!layout.run_dir(&n, &v).join("init").exists(), "init secrets removed");
+        }
+        tokio::time::sleep(Duration::from_secs(6)).await;
+        for f in logs::list(&layout.logs()) {
+            let c = logs::read(&layout.logs(), &f.name, None).unwrap().content;
+            let tail: Vec<&str> = c.lines().rev().take(12).collect();
+            eprintln!("--- {} ---\n{}", f.name, tail.into_iter().rev().collect::<Vec<_>>().join("\n"));
+        }
+
+        let pw = |id: &str| {
+            let (n, v) = paths::parse_service_id(id).unwrap();
+            secrets::load(&st.layout(), &n, &v).unwrap().0
+        };
+        let (mysql_pw, pg_pw) = (pw(&mysql), pw(&pg));
+        let mysql_query = |password: &str| {
+            std::process::Command::new(client(&st, &mysql, "mysql"))
+                .args(["--no-defaults", "-h127.0.0.1", "-P53306", "-uroot", "-Nse", "SELECT 41+1"])
+                .env("MYSQL_PWD", password)
+                .output()
+                .unwrap()
+        };
+        let pg_query = |password: &str| {
+            std::process::Command::new(client(&st, &pg, "psql"))
+                .args(["-h", "127.0.0.1", "-p", "55432", "-U", "postgres", "-d", "postgres", "-tAc", "SELECT 41+1"])
+                .env("PGPASSWORD", password)
+                .output()
+                .unwrap()
+        };
+        let ok = |o: std::process::Output| String::from_utf8_lossy(&o.stdout).trim().to_string();
+        assert_eq!(ok(mysql_query(&mysql_pw)), "42", "mysql login with generated password");
+        assert_eq!(ok(pg_query(&pg_pw)), "42", "postgres login with generated password");
+        assert!(!mysql_query("wrong").status.success(), "mysql rejects wrong password");
+        assert!(!pg_query("wrong").status.success(), "postgres rejects wrong password");
+
+        // Restart: no re-init, same password, data persists.
+        st.supervisor.stop_all().await;
+        commands::start_service_inner(&st, &pg).await.unwrap();
+        tokio::time::sleep(Duration::from_secs(3)).await;
+        assert_eq!(pw(&pg), pg_pw);
+        assert_eq!(ok(pg_query(&pg_pw)), "42");
+        st.supervisor.stop_all().await;
+        assert!(ports::is_free(53306) && ports::is_free(55432), "databases stopped");
+
+        // Uninstall keeping data keeps credentials; deleting data removes both.
+        let (n, v) = paths::parse_service_id(&pg).unwrap();
+        modules::uninstall(&layout, &n, &v, false).unwrap();
+        assert!(layout.data_dir(&n, &v).exists() && secrets::load(&layout, &n, &v).is_ok());
+        secrets::delete(&layout, &n, &v);
+        let (n, v) = paths::parse_service_id(&mysql).unwrap();
+        modules::uninstall(&layout, &n, &v, true).unwrap();
+        assert!(!layout.data_dir(&n, &v).exists() && secrets::load(&layout, &n, &v).is_err());
     }
 }

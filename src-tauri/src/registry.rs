@@ -79,6 +79,26 @@ pub struct ServiceSpec {
     pub start_windows: Option<Vec<String>>,
     #[serde(default)]
     pub default_port: Option<u16>,
+    /// One-time data initialisation (e.g. `initdb`), run before the first start.
+    #[serde(default)]
+    pub init: Option<InitSpec>,
+    /// Present for databases: a random root password is generated at init.
+    #[serde(default)]
+    pub credentials: Option<CredentialSpec>,
+}
+
+/// `files` are rendered (with `{{password}}`) into a private temp folder,
+/// exposed as `{{init}}`, and deleted once `commands` finish.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct InitSpec {
+    #[serde(default)]
+    pub files: BTreeMap<String, String>,
+    pub commands: Vec<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CredentialSpec {
+    pub user: String,
 }
 
 impl ServiceSpec {
@@ -140,7 +160,7 @@ fn validate_manifest(m: &ModuleManifest, expected_name: &str) -> AppResult<()> {
             if a.sha256.len() != 64 || !a.sha256.chars().all(|c| c.is_ascii_hexdigit()) {
                 return Err(AppError::InvalidInput("asset sha256".into()));
             }
-            if !matches!(a.format.as_str(), "zip" | "tar.gz" | "binary") {
+            if !matches!(a.format.as_str(), "zip" | "tar.gz" | "tar.xz" | "binary") {
                 return Err(AppError::InvalidInput("asset format".into()));
             }
             if a.format == "binary" && !is_plain_file_name(&a.bin_name) {
@@ -151,9 +171,22 @@ fn validate_manifest(m: &ModuleManifest, expected_name: &str) -> AppResult<()> {
             }
         }
     }
-    for file in m.config_templates.keys() {
+    let init_files = m.service.iter().flat_map(|s| s.init.iter()).flat_map(|i| i.files.keys());
+    for file in m.config_templates.keys().chain(init_files) {
         if !is_plain_file_name(file) {
             return Err(AppError::InvalidInput("template name".into()));
+        }
+    }
+    if let Some(service) = &m.service {
+        let commands = service.init.iter().flat_map(|i| i.commands.iter());
+        if service.start.is_empty() || commands.clone().any(|c| c.is_empty()) {
+            return Err(AppError::InvalidInput("empty command".into()));
+        }
+        let user_ok = service.credentials.as_ref().is_none_or(|c| {
+            !c.user.is_empty() && c.user.chars().all(|ch| ch.is_ascii_alphanumeric() || ch == '_')
+        });
+        if !user_ok {
+            return Err(AppError::InvalidInput("credentials user".into()));
         }
     }
     Ok(())

@@ -10,6 +10,8 @@ use crate::paths::{unix_now, validate_name, validate_version, write_atomic, Layo
 use crate::registry::{platform_key, ModuleManifest, ServiceSpec};
 
 const META_FILE: &str = ".stackyard-module.json";
+const INIT_MARKER: &str = ".stackyard-initialized";
+const INIT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(180);
 
 /// Snapshot of what was installed, so services run without the registry.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -83,6 +85,7 @@ pub fn template_vars(layout: &Layout, m: &InstalledModule, port: Option<u16>) ->
         ("data", p(layout.data_dir(&m.name, &m.version))),
         ("run", p(layout.run_dir(&m.name, &m.version))),
         ("logs", p(layout.logs())),
+        ("sock", p(layout.socket_dir(&m.name, &m.version))),
         ("www", p(layout.www())),
         ("name", m.name.clone()),
         ("version", m.version.clone()),
@@ -107,6 +110,9 @@ pub fn write_configs(layout: &Layout, m: &InstalledModule, port: Option<u16>, ov
         layout.logs(),
     ] {
         std::fs::create_dir_all(dir)?;
+    }
+    if m.service.is_some() {
+        layout.ensure_socket_dir(&m.name, &m.version)?;
     }
     let vars = template_vars(layout, m, port);
     let conf = layout.conf_dir(&m.name, &m.version);
@@ -195,6 +201,114 @@ pub async fn install(
     Ok(meta)
 }
 
+/// Renders a command and checks its program ships inside the module itself,
+/// so a manifest can never launch arbitrary system binaries.
+pub fn resolve_command(
+    layout: &Layout,
+    m: &InstalledModule,
+    args: &[String],
+    vars: &[(&str, String)],
+) -> AppResult<(PathBuf, Vec<String>)> {
+    let mut rendered = args.iter().map(|a| render(a, vars));
+    let program = PathBuf::from(rendered.next().ok_or(AppError::NoService)?);
+    let module_dir = layout.module_dir(&m.name, &m.version);
+    if !program.starts_with(&module_dir) || program.components().any(|c| c == std::path::Component::ParentDir) {
+        return Err(AppError::InvalidInput("service program outside module".into()));
+    }
+    Ok((program, rendered.collect()))
+}
+
+pub fn is_initialized(layout: &Layout, m: &InstalledModule) -> bool {
+    layout.data_dir(&m.name, &m.version).join(INIT_MARKER).exists()
+}
+
+/// Runs the manifest's one-time init (e.g. `initdb`) into an empty data dir.
+/// A generated root password goes to the keychain; the init files that carry
+/// it exist only in a private temp folder for the duration of the commands.
+/// On failure the data dir is emptied again so the next start can retry.
+pub async fn initialize(layout: &Layout, m: &InstalledModule, port: Option<u16>, log_file: &Path) -> AppResult<()> {
+    let Some(init) = m.service.as_ref().and_then(|s| s.init.as_ref()) else { return Ok(()) };
+    let data = layout.data_dir(&m.name, &m.version);
+    if is_initialized(layout, m) {
+        return Ok(());
+    }
+    std::fs::create_dir_all(&data)?;
+    if std::fs::read_dir(&data)?.next().is_some() {
+        // Existing data we did not create: never touch it.
+        return Ok(());
+    }
+
+    let has_credentials = m.service.as_ref().is_some_and(|s| s.credentials.is_some());
+    let password = if has_credentials { crate::secrets::generate_password()? } else { String::new() };
+    let init_dir = layout.run_dir(&m.name, &m.version).join("init");
+    let mut vars = template_vars(layout, m, port);
+    vars.push(("init", init_dir.to_string_lossy().replace('\\', "/")));
+
+    let result = async {
+        if has_credentials {
+            crate::secrets::store(layout, &m.name, &m.version, &password)?;
+        }
+        let mut file_vars = vars.clone();
+        file_vars.push(("password", password.clone()));
+        for (file, tpl) in &init.files {
+            crate::secrets::write_private(&init_dir.join(file), render(tpl, &file_vars).as_bytes())?;
+        }
+        for cmd in &init.commands {
+            let (program, args) = resolve_command(layout, m, cmd, &vars)?;
+            run_logged(&program, &args, &layout.conf_dir(&m.name, &m.version), log_file).await?;
+        }
+        Ok::<_, AppError>(())
+    }
+    .await;
+
+    let _ = std::fs::remove_dir_all(&init_dir);
+    match result {
+        Ok(()) => {
+            std::fs::write(data.join(INIT_MARKER), "")?;
+            Ok(())
+        }
+        Err(e) => {
+            if let Ok(entries) = std::fs::read_dir(&data) {
+                for entry in entries.flatten() {
+                    let p = entry.path();
+                    let _ = if p.is_dir() { std::fs::remove_dir_all(&p) } else { std::fs::remove_file(&p) };
+                }
+            }
+            crate::secrets::delete(layout, &m.name, &m.version);
+            Err(e)
+        }
+    }
+}
+
+async fn run_logged(program: &Path, args: &[String], cwd: &Path, log_file: &Path) -> AppResult<()> {
+    use std::process::Stdio;
+    if let Some(dir) = log_file.parent() {
+        std::fs::create_dir_all(dir)?;
+    }
+    let log = std::fs::OpenOptions::new().create(true).append(true).open(log_file)?;
+    {
+        use std::io::Write;
+        let mut l = &log;
+        let _ = writeln!(l, "[stackyard {}] init: {}", unix_now(), program.display());
+    }
+    let mut cmd = tokio::process::Command::new(program);
+    cmd.args(args)
+        .current_dir(cwd)
+        .stdin(Stdio::null())
+        .stdout(Stdio::from(log.try_clone()?))
+        .stderr(Stdio::from(log))
+        .kill_on_drop(true);
+    #[cfg(windows)]
+    cmd.creation_flags(0x0800_0000);
+    let mut child = cmd.spawn().map_err(|e| AppError::Spawn(e.to_string()))?;
+    match tokio::time::timeout(INIT_TIMEOUT, child.wait()).await {
+        Ok(Ok(status)) if status.success() => Ok(()),
+        Ok(Ok(status)) => Err(AppError::Spawn(format!("init exited with {status}"))),
+        Ok(Err(e)) => Err(AppError::Spawn(e.to_string())),
+        Err(_) => Err(AppError::Spawn("init timed out".into())),
+    }
+}
+
 /// Removes binaries and generated config; database data is kept unless asked.
 pub fn uninstall(layout: &Layout, name: &str, version: &str, delete_data: bool) -> AppResult<()> {
     load_installed(layout, name, version)?;
@@ -203,6 +317,14 @@ pub fn uninstall(layout: &Layout, name: &str, version: &str, delete_data: bool) 
         if dir.exists() {
             std::fs::remove_dir_all(dir)?;
         }
+    }
+    let sock = layout.socket_dir(name, version);
+    let _ = std::fs::remove_dir_all(&sock);
+    if let Some(parent) = sock.parent() {
+        let _ = std::fs::remove_dir(parent); // only when empty
+    }
+    if delete_data {
+        crate::secrets::delete(layout, name, version);
     }
     if delete_data && layout.data_dir(name, version).exists() {
         std::fs::remove_dir_all(layout.data_dir(name, version))?;

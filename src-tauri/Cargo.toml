@@ -1,10 +1,10 @@
 [package]
 name = "stackyard"
-version = "0.1.0"
+version = "0.2.0"
 description = "Cross-platform local development environment manager"
 license = "MIT"
 edition = "2021"
-rust-version = "1.80"
+rust-version = "1.82"
 
 [lib]
 name = "stackyard_lib"
@@ -29,6 +29,9 @@ zip = { version = "9", default-features = false, features = ["deflate"] }
 tar = "0.4"
 flate2 = "1"
 tauri-plugin-updater = "2"
+keyring = { version = "3", features = ["apple-native", "windows-native", "async-secret-service", "tokio", "crypto-rust"] }
+liblzma = { version = "0.4.9", features = ["static"] }
+getrandom = "0.3"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
