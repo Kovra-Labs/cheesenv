@@ -2,7 +2,7 @@
 import { computed, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { api, isAppError, type ServiceInfo } from '../api';
-import { attempt, reloadServices, toast, toastError } from '../store';
+import { attempt, reloadServices, store, toast, toastError } from '../store';
 import StatusBadge from './StatusBadge.vue';
 import CredentialsPanel from './CredentialsPanel.vue';
 
@@ -17,6 +17,19 @@ watch(
   () => props.service.port,
   (p) => (portInput.value = p),
 );
+
+/** Installed web panels (phpMyAdmin, pgAdmin) that manage this service's module. */
+const panels = computed(() => store.services.filter((s) => s.panel_for === props.service.name));
+const openingPanel = ref<string | null>(null);
+
+async function openPanel(id: string) {
+  openingPanel.value = id;
+  try {
+    await attempt(() => api.openPanel(id));
+  } finally {
+    openingPanel.value = null;
+  }
+}
 
 const active = computed(() => props.service.status !== 'stopped' && props.service.status !== 'crashed');
 const portDirty = computed(() => portInput.value !== props.service.port);
@@ -97,6 +110,20 @@ const setAutostart = (v: boolean) => attempt(() => api.setServiceOptions(props.s
       <button v-if="service.status === 'running' && service.category === 'web-server'" class="btn small" @click="open">
         {{ t('services.openBrowser') }}
       </button>
+      <template v-if="service.status === 'running'">
+        <button
+          v-for="p in panels"
+          :key="p.id"
+          class="btn small"
+          :disabled="openingPanel !== null"
+          @click="openPanel(p.id)"
+        >
+          {{ openingPanel === p.id ? t('services.panelStarting') : t('services.openPanel', { name: p.name }) }}
+        </button>
+      </template>
+      <button v-if="service.panel_for && service.status === 'running'" class="btn small" :disabled="openingPanel !== null" @click="openPanel(service.id)">
+        {{ openingPanel === service.id ? t('services.panelStarting') : t('services.openPanel', { name: service.name }) }}
+      </button>
       <button v-if="service.credentials_user" class="btn small" :aria-expanded="showCreds" @click="showCreds = !showCreds">
         {{ t('services.credentials') }}
       </button>
@@ -114,6 +141,7 @@ const setAutostart = (v: boolean) => attempt(() => api.setServiceOptions(props.s
     </div>
 
     <p v-if="!service.initialized && !active" class="hint full">{{ t('services.firstStart') }}</p>
+    <p v-if="detailed && service.panel_for" class="hint full">{{ t('services.panelHint', { target: service.panel_for }) }}</p>
 
     <CredentialsPanel v-if="showCreds && service.credentials_user" :key="`${service.initialized}`" class="full" :service="service" />
 

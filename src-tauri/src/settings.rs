@@ -7,7 +7,9 @@ use crate::error::{AppError, AppResult};
 use crate::paths::{parse_service_id, write_atomic};
 
 /// Official registry index (GitHub Pages). Users may point this to a mirror.
-pub const DEFAULT_REGISTRY_URL: &str = "https://stackyard.github.io/registry";
+pub const DEFAULT_REGISTRY_URL: &str = "https://pipsyrs.github.io/stackyard";
+/// Former default that was never published; saved settings are moved off it.
+const LEGACY_REGISTRY_URL: &str = "https://stackyard.github.io/registry";
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
 #[serde(default)]
@@ -64,13 +66,17 @@ pub struct SettingsUpdate {
 
 impl Settings {
     pub fn load(path: &Path) -> Self {
-        match std::fs::read(path) {
+        let mut s: Self = match std::fs::read(path) {
             Ok(bytes) => serde_json::from_slice(&bytes).unwrap_or_else(|e| {
                 eprintln!("[stackyard] settings unreadable, using defaults: {e}");
                 Self::default()
             }),
             Err(_) => Self::default(),
+        };
+        if s.registry_url.trim_end_matches('/') == LEGACY_REGISTRY_URL {
+            s.registry_url = DEFAULT_REGISTRY_URL.into();
         }
+        s
     }
 
     pub fn save(&self, path: &Path) -> AppResult<()> {
@@ -150,13 +156,23 @@ mod tests {
 
     #[test]
     fn url_rules() {
-        assert!(validate_remote_url("https://stackyard.github.io/registry").is_ok());
+        assert!(validate_remote_url(DEFAULT_REGISTRY_URL).is_ok());
         assert!(validate_remote_url("http://127.0.0.1:8000").is_ok());
         assert!(validate_remote_url("http://localhost/reg").is_ok());
         assert!(validate_remote_url("http://example.com").is_err());
         assert!(validate_remote_url("http://localhost.evil.com").is_err());
         assert!(validate_remote_url("file:///etc").is_err());
         assert!(validate_remote_url("https://a b").is_err());
+    }
+
+    #[test]
+    fn legacy_registry_url_is_migrated() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("settings.json");
+        std::fs::write(&path, r#"{"registry_url":"https://stackyard.github.io/registry/"}"#).unwrap();
+        assert_eq!(Settings::load(&path).registry_url, DEFAULT_REGISTRY_URL);
+        std::fs::write(&path, r#"{"registry_url":"http://127.0.0.1:8765"}"#).unwrap();
+        assert_eq!(Settings::load(&path).registry_url, "http://127.0.0.1:8765", "custom URL kept");
     }
 
     #[test]

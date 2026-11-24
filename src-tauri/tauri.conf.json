@@ -50,7 +50,7 @@
     "updater": {
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDFBNzYzMzBBMUQ3MTM5MzAKUldRd09YRWRDak4yR2lLTmVobGdNcDNaTzZiaXc2M25uNDVrM3o3RGhCSVFCb3c4VjlXR2d2Z2EK",
       "endpoints": [
-        "https://github.com/stackyard/stackyard/releases/latest/download/latest.json"
+        "https://github.com/pipsyrs/stackyard/releases/latest/download/latest.json"
       ],
       "windows": {
         "installMode": "passive"

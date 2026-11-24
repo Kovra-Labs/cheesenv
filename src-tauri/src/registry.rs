@@ -46,6 +46,24 @@ pub struct ModuleManifest {
     pub service: Option<ServiceSpec>,
     #[serde(default)]
     pub config_templates: BTreeMap<String, String>,
+    /// Install-time step run inside the module (e.g. `pip install`).
+    #[serde(default)]
+    pub setup: Option<InitSpec>,
+    /// Files rendered into the module folder at install, keyed by relative path.
+    #[serde(default)]
+    pub module_files: BTreeMap<String, String>,
+    /// Present for web panels that manage another module (e.g. phpMyAdmin).
+    #[serde(default)]
+    pub panel: Option<PanelSpec>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PanelSpec {
+    /// Module whose services the panel manages.
+    #[serde(rename = "for")]
+    pub target: String,
+    /// URL path opened in the browser; may contain `{{token}}`.
+    pub path: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -69,6 +87,21 @@ pub struct Asset {
     /// File name for `binary` assets.
     #[serde(default)]
     pub bin_name: String,
+    /// More archives extracted into sub-folders of the module.
+    #[serde(default)]
+    pub extra: Vec<ExtraAsset>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExtraAsset {
+    pub url: String,
+    pub sha256: String,
+    /// `zip`, `tar.gz` or `tar.xz`.
+    pub format: String,
+    #[serde(default)]
+    pub strip: usize,
+    /// Target folder relative to the module root.
+    pub dest: String,
 }
 
 /// Process definition. Args are passed directly to the OS (never via a shell).
@@ -94,6 +127,18 @@ pub struct InitSpec {
     #[serde(default)]
     pub files: BTreeMap<String, String>,
     pub commands: Vec<Vec<String>>,
+    #[serde(default)]
+    pub commands_windows: Option<Vec<Vec<String>>>,
+}
+
+impl InitSpec {
+    pub fn commands(&self) -> &[Vec<String>] {
+        if cfg!(windows) {
+            self.commands_windows.as_deref().unwrap_or(&self.commands)
+        } else {
+            &self.commands
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -156,10 +201,7 @@ fn validate_manifest(m: &ModuleManifest, expected_name: &str) -> AppResult<()> {
     for v in &m.versions {
         validate_version(&v.version)?;
         for a in v.assets.values() {
-            validate_remote_url(&a.url)?;
-            if a.sha256.len() != 64 || !a.sha256.chars().all(|c| c.is_ascii_hexdigit()) {
-                return Err(AppError::InvalidInput("asset sha256".into()));
-            }
+            validate_download(&a.url, &a.sha256)?;
             if !matches!(a.format.as_str(), "zip" | "tar.gz" | "tar.xz" | "binary") {
                 return Err(AppError::InvalidInput("asset format".into()));
             }
@@ -169,17 +211,41 @@ fn validate_manifest(m: &ModuleManifest, expected_name: &str) -> AppResult<()> {
             if !is_safe_relative(&a.bin_dir) {
                 return Err(AppError::InvalidInput("asset bin_dir".into()));
             }
+            for x in &a.extra {
+                validate_download(&x.url, &x.sha256)?;
+                if !matches!(x.format.as_str(), "zip" | "tar.gz" | "tar.xz") {
+                    return Err(AppError::InvalidInput("asset format".into()));
+                }
+                if x.dest.is_empty() || !is_safe_relative(&x.dest) {
+                    return Err(AppError::InvalidInput("asset dest".into()));
+                }
+            }
         }
     }
-    let init_files = m.service.iter().flat_map(|s| s.init.iter()).flat_map(|i| i.files.keys());
-    for file in m.config_templates.keys().chain(init_files) {
+    let steps = || m.service.iter().flat_map(|s| s.init.iter()).chain(m.setup.iter());
+    for file in m.config_templates.keys().chain(steps().flat_map(|i| i.files.keys())) {
         if !is_plain_file_name(file) {
             return Err(AppError::InvalidInput("template name".into()));
         }
     }
+    if m.module_files.keys().any(|f| f.is_empty() || !is_safe_relative(f)) {
+        return Err(AppError::InvalidInput("module file".into()));
+    }
+    let commands = steps().flat_map(|i| i.commands.iter().chain(i.commands_windows.iter().flatten()));
+    if commands.clone().any(|c| c.is_empty()) {
+        return Err(AppError::InvalidInput("empty command".into()));
+    }
+    if let Some(panel) = &m.panel {
+        validate_name(&panel.target)?;
+        if !panel.path.starts_with('/') || panel.path.chars().any(|c| c.is_whitespace() || c == '\\') {
+            return Err(AppError::InvalidInput("panel path".into()));
+        }
+        if m.service.as_ref().is_none_or(|s| s.default_port.is_none()) {
+            return Err(AppError::InvalidInput("panel without port".into()));
+        }
+    }
     if let Some(service) = &m.service {
-        let commands = service.init.iter().flat_map(|i| i.commands.iter());
-        if service.start.is_empty() || commands.clone().any(|c| c.is_empty()) {
+        if service.start.is_empty() || service.start_windows.as_ref().is_some_and(|s| s.is_empty()) {
             return Err(AppError::InvalidInput("empty command".into()));
         }
         let user_ok = service.credentials.as_ref().is_none_or(|c| {
@@ -188,6 +254,14 @@ fn validate_manifest(m: &ModuleManifest, expected_name: &str) -> AppResult<()> {
         if !user_ok {
             return Err(AppError::InvalidInput("credentials user".into()));
         }
+    }
+    Ok(())
+}
+
+fn validate_download(url: &str, sha256: &str) -> AppResult<()> {
+    validate_remote_url(url)?;
+    if sha256.len() != 64 || !sha256.chars().all(|c| c.is_ascii_hexdigit()) {
+        return Err(AppError::InvalidInput("asset sha256".into()));
     }
     Ok(())
 }
@@ -359,6 +433,39 @@ mod tests {
         let i = tampered.iter().position(|b| *b == b'n').unwrap();
         tampered[i] = b'm';
         assert!(matches!(verify_signature(&tampered, &sig), Err(AppError::Signature(_))));
+    }
+
+    /// Every source manifest must pass the same validation the app applies.
+    #[test]
+    fn source_manifests_are_valid() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../registry/modules");
+        let mut seen = 0;
+        for entry in std::fs::read_dir(dir).unwrap().flatten() {
+            let path = entry.path();
+            let name = path.file_stem().unwrap().to_string_lossy().to_string();
+            let m: ModuleManifest = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+            validate_manifest(&m, &name).unwrap_or_else(|e| panic!("{name}: {e}"));
+            seen += 1;
+        }
+        assert!(seen > 0);
+    }
+
+    #[test]
+    fn rejects_unsafe_panel_and_module_files() {
+        let base = r#"{"name":"p","category":"tools","versions":[],
+            "service":{"start":["{{bin}}/x"],"default_port":1}"#;
+        let check = |extra: &str| {
+            let m: ModuleManifest = serde_json::from_str(&format!("{base},{extra}}}")).unwrap();
+            validate_manifest(&m, "p")
+        };
+        assert!(check(r#""panel":{"for":"mysql","path":"/"}"#).is_ok());
+        assert!(check(r#""panel":{"for":"mysql","path":"http://evil"}"#).is_err());
+        assert!(check(r#""panel":{"for":"../x","path":"/"}"#).is_err());
+        assert!(check(r#""module_files":{"app/a.php":""}"#).is_ok());
+        assert!(check(r#""module_files":{"../a.php":""}"#).is_err());
+        assert!(check(r#""module_files":{"/etc/a":""}"#).is_err());
+        assert!(check(r#""setup":{"commands":[[]]}"#).is_err());
+        assert!(check(r#""setup":{"files":{"../r.txt":""},"commands":[["x"]]}"#).is_err());
     }
 
     #[test]

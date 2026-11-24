@@ -47,6 +47,7 @@ function fmtBytes(n: number) {
 }
 
 function progressText(p: InstallProgress) {
+  if (p.stage === 'setup') return t('modules.settingUp');
   const pct = p.total ? ` ${Math.floor((p.downloaded / p.total) * 100)}%` : '';
   return t('modules.downloading', { p: `${fmtBytes(p.downloaded)}${pct}` });
 }
@@ -114,7 +115,7 @@ async function confirmUninstall() {
 
 onMounted(async () => {
   unlisten = await events.installProgress((p) => {
-    if (p.stage === 'download') progress[`${p.name}@${p.version}`] = p;
+    if (p.stage === 'download' || p.stage === 'setup') progress[`${p.name}@${p.version}`] = p;
   });
   await load();
 });
@@ -175,7 +176,7 @@ onUnmounted(() => unlisten?.());
               <span class="mono">{{ v.version }}</span>
               <span v-if="progress[`${m.name}@${v.version}`]" class="hint prog">
                 <progress
-                  :value="progress[`${m.name}@${v.version}`].downloaded"
+                  :value="progress[`${m.name}@${v.version}`].stage === 'setup' ? undefined : progress[`${m.name}@${v.version}`].downloaded"
                   :max="progress[`${m.name}@${v.version}`].total ?? undefined"
                 />
                 {{ progressText(progress[`${m.name}@${v.version}`]) }}

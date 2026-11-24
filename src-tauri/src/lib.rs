@@ -4,6 +4,7 @@ mod error;
 mod extract;
 mod logs;
 mod modules;
+mod panel;
 mod paths;
 mod ports;
 mod registry;
@@ -101,6 +102,7 @@ pub fn run() {
             commands::read_log,
             commands::clear_log,
             commands::open_service_url,
+            commands::open_panel,
             commands::open_folder,
             commands::get_credentials,
             updater::check_update,
@@ -156,9 +158,13 @@ mod e2e {
         let entry = idx.index.modules.iter().find(|m| m.name == name).unwrap().clone();
         let manifest = reg.manifest(&entry).await.expect("manifest");
         let id = service_id(name, &entry.latest);
-        modules::install(&st.client, &layout, &manifest, &entry.latest, |sp| st.port_for(&id, sp), |_, _| {})
-            .await
-            .expect("install");
+        let result =
+            modules::install(&st.client, &layout, &manifest, &entry.latest, |sp| st.port_for(&id, sp), |_, _, _| {}).await;
+        if let Err(e) = result {
+            let log = std::fs::read_to_string(layout.logs().join(format!("{name}-{}.log", entry.latest))).unwrap_or_default();
+            let tail: Vec<&str> = log.lines().rev().take(40).collect();
+            panic!("install {name}: {e:?}\n{}", tail.into_iter().rev().collect::<Vec<_>>().join("\n"));
+        }
         id
     }
 
@@ -286,5 +292,154 @@ mod e2e {
         let (n, v) = paths::parse_service_id(&mysql).unwrap();
         modules::uninstall(&layout, &n, &v, true).unwrap();
         assert!(!layout.data_dir(&n, &v).exists() && secrets::load(&layout, &n, &v).is_err());
+    }
+
+    async fn wait_listening(port: u16, secs: u64) {
+        for _ in 0..secs * 2 {
+            if panel::is_listening(port) {
+                return;
+            }
+            tokio::time::sleep(Duration::from_millis(500)).await;
+        }
+        panic!("port {port} never opened");
+    }
+
+    /// Status code for a request path sent verbatim (HTTP clients normalise `..`).
+    fn raw_status(port: u16, path: &str) -> u16 {
+        use std::io::{Read, Write};
+        let mut s = std::net::TcpStream::connect(("127.0.0.1", port)).unwrap();
+        s.set_read_timeout(Some(Duration::from_secs(10))).unwrap();
+        s.write_all(format!("GET {path} HTTP/1.0\r\nHost: 127.0.0.1:{port}\r\nConnection: close\r\n\r\n").as_bytes())
+            .unwrap();
+        let mut resp = Vec::new();
+        let _ = s.read_to_end(&mut resp);
+        let text = String::from_utf8_lossy(&resp);
+        text.split(' ').nth(1).and_then(|c| c.parse().ok()).unwrap_or_else(|| panic!("{path}: bad response {text:?}"))
+    }
+
+    /// Logs in through phpMyAdmin's form (manual cookie jar) and returns the
+    /// MySQL server version it reports, or "" when login fails.
+    async fn phpmyadmin_login(http: &reqwest::Client, port: u16, user: &str, password: &str) -> String {
+        let base = format!("http://127.0.0.1:{port}");
+        let mut jar: std::collections::BTreeMap<String, String> = Default::default();
+        let keep = |jar: &mut std::collections::BTreeMap<String, String>, r: &reqwest::Response| {
+            for c in r.headers().get_all(reqwest::header::SET_COOKIE) {
+                let pair = c.to_str().unwrap().split(';').next().unwrap();
+                if let Some((k, v)) = pair.split_once('=') {
+                    jar.insert(k.into(), v.into());
+                }
+            }
+        };
+        let cookie = |jar: &std::collections::BTreeMap<String, String>| {
+            jar.iter().map(|(k, v)| format!("{k}={v}")).collect::<Vec<_>>().join("; ")
+        };
+        let r = http.get(format!("{base}/")).send().await.unwrap();
+        keep(&mut jar, &r);
+        let page = r.text().await.unwrap();
+        let token = page.split(r#"name="token" value=""#).nth(1).unwrap().split('"').next().unwrap().to_string();
+        let form = [
+            ("route", "/"),
+            ("token", token.as_str()),
+            ("set_session", jar.get("phpMyAdmin").map(String::as_str).unwrap_or("")),
+            ("pma_username", user),
+            ("pma_password", password),
+            ("server", "1"),
+        ];
+        let body: String = form
+            .iter()
+            .map(|(k, v)| format!("{k}={}", v.bytes().map(|b| format!("%{b:02X}")).collect::<String>()))
+            .collect::<Vec<_>>()
+            .join("&");
+        let r = http
+            .post(format!("{base}/index.php?route=/"))
+            .header(reqwest::header::COOKIE, cookie(&jar))
+            .header(reqwest::header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+            .body(body)
+            .send()
+            .await
+            .unwrap();
+        keep(&mut jar, &r);
+        let r = http.get(format!("{base}/index.php?route=/")).header(reqwest::header::COOKIE, cookie(&jar)).send().await.unwrap();
+        let page = r.text().await.unwrap();
+        // Logged-in home page lists "Server version: 8.4.x - MySQL Community Server".
+        page.split("Server version:").nth(1).map(|s| s.chars().take(40).collect()).unwrap_or_default()
+    }
+
+    /// phpMyAdmin (static PHP) for MySQL and pgAdmin (portable Python + pip)
+    /// for PostgreSQL: install, auto-filled servers, token-guarded URL.
+    #[tokio::test]
+    #[ignore]
+    async fn panels_manage_databases() {
+        let Ok(url) = std::env::var("STACKYARD_E2E_REGISTRY") else { return };
+        let tmp = tempfile::tempdir().unwrap();
+        let st = Arc::new(state(tmp.path(), &url));
+        st.layout().ensure().unwrap();
+        // Always stop the services, even when an assertion fails.
+        let result = tokio::spawn(panels_body(st.clone())).await;
+        st.supervisor.stop_all().await;
+        if let Err(e) = result {
+            std::panic::resume_unwind(e.into_panic());
+        }
+        for port in [53306, 58081, 55432, 55050] {
+            assert!(ports::is_free(port), "{port} released");
+        }
+    }
+
+    async fn panels_body(st: Arc<AppState>) {
+        let layout = st.layout();
+        let mysql = install(&st, "mysql").await;
+        let pma = install(&st, "phpmyadmin").await;
+        let pg = install(&st, "postgresql").await;
+        let pga = install(&st, "pgadmin").await;
+        st.update_settings(|s| {
+            for (id, port) in [(&mysql, 53306), (&pma, 58081), (&pg, 55432), (&pga, 55050)] {
+                s.set_service(id, settings::ServiceSettings { port: Some(port), autostart: false })?;
+            }
+            Ok(())
+        })
+        .unwrap();
+        for id in [&mysql, &pma, &pg, &pga] {
+            let (n, v) = paths::parse_service_id(id).unwrap();
+            let m = modules::load_installed(&layout, &n, &v).unwrap();
+            modules::write_configs(&layout, &m, st.port_for(id, m.service.as_ref().unwrap()), true).unwrap();
+            commands::start_service_inner(&st, id).await.unwrap_or_else(|e| panic!("{id}: {e:?}"));
+        }
+        let http = reqwest::Client::builder().redirect(reqwest::redirect::Policy::none()).build().unwrap();
+        let get = |url: String| {
+            let http = http.clone();
+            async move {
+                let r = http.get(&url).send().await.unwrap();
+                (r.status().as_u16(), r.text().await.unwrap())
+            }
+        };
+
+        wait_listening(58081, 30).await;
+        let (code, body) = get("http://127.0.0.1:58081/".into()).await;
+        assert_eq!(code, 200, "{body}");
+        assert!(body.contains(r#"name="server" value="1""#), "MySQL server auto-filled");
+        let (n, v) = paths::parse_service_id(&mysql).unwrap();
+        let mysql_pw = secrets::load(&layout, &n, &v).unwrap().0;
+        let version = phpmyadmin_login(&http, 58081, "root", &mysql_pw).await;
+        assert!(version.contains("8.4"), "logged in through phpMyAdmin: {version}");
+        assert!(phpmyadmin_login(&http, 58081, "root", "wrong").await.is_empty(), "wrong password rejected");
+        for internal in [
+            "/libraries/classes/Config.php",
+            "/Setup/",
+            "/libraries./classes/Config.php",
+            "/./vendor/autoload.php",
+            "/js/../config.inc.php",
+            "/%2e%2e/x",
+            "/js/%2e%2e/libraries/classes/Config.php",
+        ] {
+            assert_eq!(raw_status(58081, internal), 403, "{internal} must not be served");
+        }
+
+        wait_listening(55050, 180).await;
+        let (n, v) = paths::parse_service_id(&pga).unwrap();
+        let panel_url = panel::url(&layout, &modules::load_installed(&layout, &n, &v).unwrap()).unwrap();
+        let (code, _) = get("http://127.0.0.1:55050/?key=wrong".into()).await;
+        assert_eq!(code, 401, "pgAdmin rejects a wrong key");
+        let (code, body) = get(panel_url).await;
+        assert!(code == 200 || code == 302, "pgAdmin accepts its key: {code} {body}");
     }
 }

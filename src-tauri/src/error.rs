@@ -29,6 +29,10 @@ pub enum AppError {
     UnsafeArchive(String),
     #[error("network error: {0}")]
     Network(String),
+    #[error("no update release published: {0}")]
+    UpdateUnavailable(String),
+    #[error("administrator permission denied")]
+    AuthCancelled,
     #[error("failed to start process: {0}")]
     Spawn(String),
     #[error("io error: {0}")]
@@ -54,6 +58,8 @@ impl AppError {
             Self::Checksum => "CHECKSUM",
             Self::UnsafeArchive(_) => "UNSAFE_ARCHIVE",
             Self::Network(_) => "NETWORK",
+            Self::UpdateUnavailable(_) => "UPDATE_UNAVAILABLE",
+            Self::AuthCancelled => "AUTH_CANCELLED",
             Self::Spawn(_) => "SPAWN",
             Self::Io(_) | Self::Internal(_) => "INTERNAL",
         }

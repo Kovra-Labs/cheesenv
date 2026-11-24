@@ -25,6 +25,7 @@
     "allow-read-log",
     "allow-clear-log",
     "allow-open-service-url",
+    "allow-open-panel",
     "allow-open-folder",
     "allow-get-credentials",
     "allow-check-update",

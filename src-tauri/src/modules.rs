@@ -7,11 +7,13 @@ use crate::download::fetch_verified;
 use crate::error::{AppError, AppResult};
 use crate::extract::extract;
 use crate::paths::{unix_now, validate_name, validate_version, write_atomic, Layout};
-use crate::registry::{platform_key, ModuleManifest, ServiceSpec};
+use crate::registry::{platform_key, InitSpec, ModuleManifest, PanelSpec, ServiceSpec};
 
 const META_FILE: &str = ".stackyard-module.json";
 const INIT_MARKER: &str = ".stackyard-initialized";
 const INIT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(180);
+/// Setup may download and build packages (e.g. pgAdmin's ~110 wheels).
+const SETUP_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(20 * 60);
 
 /// Snapshot of what was installed, so services run without the registry.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -22,6 +24,8 @@ pub struct InstalledModule {
     pub bin_dir: String,
     pub service: Option<ServiceSpec>,
     pub config_templates: BTreeMap<String, String>,
+    #[serde(default)]
+    pub panel: Option<PanelSpec>,
     pub installed_at: u64,
 }
 
@@ -137,7 +141,7 @@ pub async fn install(
     manifest: &ModuleManifest,
     version: &str,
     port_for: impl FnOnce(&ServiceSpec) -> Option<u16>,
-    on_progress: impl FnMut(u64, Option<u64>),
+    mut on_progress: impl FnMut(&str, u64, Option<u64>),
 ) -> AppResult<InstalledModule> {
     validate_version(version)?;
     let entry = manifest
@@ -156,7 +160,15 @@ pub async fn install(
         return Err(AppError::AlreadyInstalled);
     }
 
-    let archive = fetch_verified(client, &asset.url, &asset.sha256, &layout.downloads(), on_progress).await?;
+    let archive = fetch_verified(client, &asset.url, &asset.sha256, &layout.downloads(), |d, t| {
+        on_progress("download", d, t)
+    })
+    .await?;
+    let mut extras = Vec::new();
+    for x in &asset.extra {
+        let path = fetch_verified(client, &x.url, &x.sha256, &layout.downloads(), |d, t| on_progress("download", d, t)).await?;
+        extras.push((path, x.clone()));
+    }
 
     let meta = InstalledModule {
         name: manifest.name.clone(),
@@ -165,13 +177,17 @@ pub async fn install(
         bin_dir: asset.bin_dir.clone(),
         service: manifest.service.clone(),
         config_templates: manifest.config_templates.clone(),
+        panel: manifest.panel.clone(),
         installed_at: unix_now(),
     };
     let staging = layout
         .modules()
         .join(&manifest.name)
         .join(format!(".{version}.partial"));
-    let meta_json = serde_json::to_vec_pretty(&meta)?;
+    let module_files: Vec<(String, String)> = {
+        let vars = template_vars(layout, &meta, None);
+        manifest.module_files.iter().map(|(f, tpl)| (f.clone(), render(tpl, &vars))).collect()
+    };
     let (staging2, final2) = (staging.clone(), final_dir.clone());
     let result = tokio::task::spawn_blocking(move || -> AppResult<()> {
         if staging2.exists() {
@@ -182,10 +198,25 @@ pub async fn install(
         }
         std::fs::create_dir_all(&staging2)?;
         extract(&archive, &asset.format, &staging2, asset.strip, &asset.bin_name)?;
-        std::fs::write(staging2.join(META_FILE), meta_json)?;
+        for (path, x) in &extras {
+            let dest = staging2.join(&x.dest);
+            std::fs::create_dir_all(&dest)?;
+            ensure_inside(&staging2, &dest)?;
+            extract(path, &x.format, &dest, x.strip, "")?;
+        }
+        for (file, content) in &module_files {
+            let target = staging2.join(file);
+            if let Some(dir) = target.parent() {
+                std::fs::create_dir_all(dir)?;
+                ensure_inside(&staging2, dir)?;
+            }
+            write_atomic(&target, content.as_bytes())?;
+        }
         std::fs::rename(&staging2, &final2)?;
-        // Downloaded archive is no longer needed once extracted.
-        let _ = std::fs::remove_file(&archive);
+        // Downloaded archives are no longer needed once extracted.
+        for path in std::iter::once(&archive).chain(extras.iter().map(|(p, _)| p)) {
+            let _ = std::fs::remove_file(path);
+        }
         Ok(())
     })
     .await
@@ -196,9 +227,55 @@ pub async fn install(
         return Err(e);
     }
 
+    // Metadata is written last: a module without it counts as not installed.
+    let finish = async {
+        if let Some(setup) = &manifest.setup {
+            on_progress("setup", 0, None);
+            run_setup(layout, &meta, setup).await?;
+        }
+        std::fs::write(final_dir.join(META_FILE), serde_json::to_vec_pretty(&meta)?)?;
+        Ok::<_, AppError>(())
+    };
+    if let Err(e) = finish.await {
+        let _ = std::fs::remove_dir_all(&final_dir);
+        return Err(e);
+    }
+
     let port = meta.service.as_ref().and_then(port_for);
     write_configs(layout, &meta, port, true)?;
     Ok(meta)
+}
+
+/// `dir` (already created) must resolve inside `root`, so a symlink shipped in
+/// an archive can never redirect later writes outside the module.
+fn ensure_inside(root: &Path, dir: &Path) -> AppResult<()> {
+    if dir.canonicalize()?.starts_with(root.canonicalize()?) {
+        Ok(())
+    } else {
+        Err(AppError::UnsafeArchive(dir.display().to_string()))
+    }
+}
+
+/// Runs the manifest's install-time commands from inside the module folder.
+async fn run_setup(layout: &Layout, m: &InstalledModule, setup: &InitSpec) -> AppResult<()> {
+    let setup_dir = layout.run_dir(&m.name, &m.version).join("setup");
+    let mut vars = template_vars(layout, m, None);
+    vars.push(("init", setup_dir.to_string_lossy().replace('\\', "/")));
+    let log_file = layout.logs().join(format!("{}-{}.log", m.name, m.version));
+    let result = async {
+        for (file, tpl) in &setup.files {
+            crate::secrets::write_private(&setup_dir.join(file), render(tpl, &vars).as_bytes())?;
+        }
+        let cwd = layout.module_dir(&m.name, &m.version);
+        for cmd in setup.commands() {
+            let (program, args) = resolve_command(layout, m, cmd, &vars)?;
+            run_logged("setup", &program, &args, &cwd, &log_file, SETUP_TIMEOUT).await?;
+        }
+        Ok::<_, AppError>(())
+    }
+    .await;
+    let _ = std::fs::remove_dir_all(&setup_dir);
+    result
 }
 
 /// Renders a command and checks its program ships inside the module itself,
@@ -253,9 +330,10 @@ pub async fn initialize(layout: &Layout, m: &InstalledModule, port: Option<u16>,
         for (file, tpl) in &init.files {
             crate::secrets::write_private(&init_dir.join(file), render(tpl, &file_vars).as_bytes())?;
         }
-        for cmd in &init.commands {
+        for cmd in init.commands() {
             let (program, args) = resolve_command(layout, m, cmd, &vars)?;
-            run_logged(&program, &args, &layout.conf_dir(&m.name, &m.version), log_file).await?;
+            let cwd = layout.conf_dir(&m.name, &m.version);
+            run_logged("init", &program, &args, &cwd, log_file, INIT_TIMEOUT).await?;
         }
         Ok::<_, AppError>(())
     }
@@ -280,7 +358,14 @@ pub async fn initialize(layout: &Layout, m: &InstalledModule, port: Option<u16>,
     }
 }
 
-async fn run_logged(program: &Path, args: &[String], cwd: &Path, log_file: &Path) -> AppResult<()> {
+async fn run_logged(
+    step: &str,
+    program: &Path,
+    args: &[String],
+    cwd: &Path,
+    log_file: &Path,
+    timeout: std::time::Duration,
+) -> AppResult<()> {
     use std::process::Stdio;
     if let Some(dir) = log_file.parent() {
         std::fs::create_dir_all(dir)?;
@@ -289,7 +374,7 @@ async fn run_logged(program: &Path, args: &[String], cwd: &Path, log_file: &Path
     {
         use std::io::Write;
         let mut l = &log;
-        let _ = writeln!(l, "[stackyard {}] init: {}", unix_now(), program.display());
+        let _ = writeln!(l, "[stackyard {}] {step}: {}", unix_now(), program.display());
     }
     let mut cmd = tokio::process::Command::new(program);
     cmd.args(args)
@@ -301,11 +386,11 @@ async fn run_logged(program: &Path, args: &[String], cwd: &Path, log_file: &Path
     #[cfg(windows)]
     cmd.creation_flags(0x0800_0000);
     let mut child = cmd.spawn().map_err(|e| AppError::Spawn(e.to_string()))?;
-    match tokio::time::timeout(INIT_TIMEOUT, child.wait()).await {
+    match tokio::time::timeout(timeout, child.wait()).await {
         Ok(Ok(status)) if status.success() => Ok(()),
-        Ok(Ok(status)) => Err(AppError::Spawn(format!("init exited with {status}"))),
+        Ok(Ok(status)) => Err(AppError::Spawn(format!("{step} exited with {status}"))),
         Ok(Err(e)) => Err(AppError::Spawn(e.to_string())),
-        Err(_) => Err(AppError::Spawn("init timed out".into())),
+        Err(_) => Err(AppError::Spawn(format!("{step} timed out"))),
     }
 }
 
@@ -351,6 +436,7 @@ mod tests {
             bin_dir: "bin".into(),
             service: None,
             config_templates: BTreeMap::from([("demo.conf".into(), "listen {{port}};\nroot {{www}};\n".into())]),
+            panel: None,
             installed_at: 0,
         };
         let dir = layout.module_dir(&m.name, &m.version);

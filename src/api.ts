@@ -65,6 +65,8 @@ export interface ServiceInfo {
   autostart: boolean;
   credentials_user: string | null;
   initialized: boolean;
+  /** Module this service is a web panel for (e.g. `mysql` for phpMyAdmin). */
+  panel_for: string | null;
 }
 
 export interface Credentials {
@@ -86,7 +88,7 @@ export interface ServiceSnapshot {
 export interface InstallProgress {
   name: string;
   version: string;
-  stage: 'download' | 'done' | 'failed';
+  stage: 'download' | 'setup' | 'done' | 'failed';
   downloaded: number;
   total: number | null;
 }
@@ -165,6 +167,7 @@ export const api = {
   clearLog: (name: string) => invoke<void>('clear_log', { name }),
 
   openServiceUrl: (id: string) => invoke<void>('open_service_url', { id }),
+  openPanel: (id: string) => invoke<void>('open_panel', { id }),
   checkUpdate: () => invoke<UpdateInfo | null>('check_update'),
   installUpdate: () => invoke<void>('install_update'),
 

@@ -19,13 +19,20 @@ export const store = reactive({
 
 let toastSeq = 0;
 
+const toastTimers = new Map<number, number>();
+
+/** Shows a toast; an identical one already on screen is kept (timer reset) instead of stacking. */
 export function toast(text: string, kind: Toast['kind'] = 'info') {
-  const id = ++toastSeq;
-  store.toasts.push({ id, kind, text });
-  setTimeout(() => dismissToast(id), kind === 'error' ? 7000 : 3500);
+  const existing = store.toasts.find((t) => t.text === text && t.kind === kind);
+  const id = existing?.id ?? ++toastSeq;
+  if (!existing) store.toasts.push({ id, kind, text });
+  window.clearTimeout(toastTimers.get(id));
+  toastTimers.set(id, window.setTimeout(() => dismissToast(id), kind === 'error' ? 7000 : 3500));
 }
 
 export function dismissToast(id: number) {
+  window.clearTimeout(toastTimers.get(id));
+  toastTimers.delete(id);
   const i = store.toasts.findIndex((t) => t.id === id);
   if (i >= 0) store.toasts.splice(i, 1);
 }

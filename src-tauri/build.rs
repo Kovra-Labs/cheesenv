@@ -20,6 +20,7 @@ const COMMANDS: &[&str] = &[
     "read_log",
     "clear_log",
     "open_service_url",
+    "open_panel",
     "open_folder",
     "get_credentials",
     "check_update",

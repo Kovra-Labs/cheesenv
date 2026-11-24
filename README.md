@@ -18,6 +18,8 @@ Aplikasi desktop lintas platform (Windows, macOS, Linux) untuk mengelola environ
 
 Module di registry contoh: **nginx 1.30.5** (Windows/macOS/Linux, x64/arm64), **PHP-FPM 8.4 / 8.3** (macOS/Linux), **MySQL 8.4 LTS** (Linux x64, macOS 15+, Windows) dan **PostgreSQL 18 / 17** (semua platform). Database diinisialisasi otomatis saat start pertama; password root dibuat acak dan disimpan di keychain OS (lihat tombol **Kredensial** di halaman Service).
 
+Panel database: **phpMyAdmin 5.2** untuk MySQL (PHP CLI statis, semua platform) dan **pgAdmin 4 9.19** untuk PostgreSQL (Python portable; Linux, macOS arm64, Windows — macOS Intel belum karena `cryptography` tidak menyediakan wheel-nya). Setelah dipasang, kartu database yang sedang berjalan punya tombol **Buka phpmyadmin / Buka pgadmin**: panel dijalankan di `127.0.0.1`, daftar server terisi otomatis dari service database yang terpasang (tanpa password), lalu dibuka di browser. Login memakai user & password dari **Kredensial**. Install pgAdmin memasang ±110 paket Python dengan hash terkunci sehingga butuh internet dan beberapa menit.
+
 ## Pengembangan
 
 Prasyarat: Node 20+, Rust stable, dan [dependency sistem Tauri](https://v2.tauri.app/start/prerequisites/).
@@ -55,7 +57,7 @@ Hasil ada di `src-tauri/target/release/bundle/`:
 | OS | Installer | Auto-update |
 |---|---|---|
 | Linux | `.AppImage` | Ya |
-| Linux | `.deb`, `.rpm` | Tidak (update lewat paket baru) |
+| Linux | `.deb`, `.rpm` | Ya (minta password admin saat memasang) |
 | Windows | `.exe` (NSIS), `.msi` | Ya |
 | macOS | `.dmg` universal, `.app.tar.gz` | Ya |
 
@@ -65,7 +67,7 @@ Installer Windows/macOS dibuat di CI (tidak bisa di-build dari Linux).
 
 Aplikasi yang sudah terpasang memeriksa `latest.json` di GitHub Releases saat dibuka (bisa dimatikan di Pengaturan), lalu mengunduh, memverifikasi tanda tangan, memasang, dan membuka ulang dirinya sendiri.
 
-Sekali saja di GitHub (repo `stackyard/stackyard`, sesuai endpoint di `src-tauri/tauri.conf.json`):
+Sekali saja di GitHub (repo `pipsyrs/stackyard`, sesuai endpoint di `src-tauri/tauri.conf.json`):
 **Settings → Secrets and variables → Actions**, tambahkan:
 - `TAURI_SIGNING_PRIVATE_KEY` = isi `~/.tauri/stackyard-updater.key`
 - `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` = isi `~/.tauri/stackyard-updater.password`
@@ -83,15 +85,23 @@ Workflow membuat **draft release** berisi installer + `latest.json`. Periksa, is
 
 ## Registry
 
-Sumber manifest ada di `registry/modules/*.json`. Placeholder template: `{{bin}}`, `{{prefix}}`, `{{conf}}`, `{{data}}`, `{{run}}`, `{{logs}}`, `{{www}}`, `{{port}}`, `{{name}}`, `{{version}}`. Perintah service ditulis sebagai array argumen (tidak pernah lewat shell) dan hanya boleh menjalankan executable di dalam folder module itu sendiri.
+Sumber manifest ada di `registry/modules/*.json`. Placeholder template: `{{bin}}`, `{{prefix}}`, `{{conf}}`, `{{data}}`, `{{run}}`, `{{logs}}`, `{{www}}`, `{{port}}`, `{{name}}`, `{{version}}`; `{{init}}` (folder sementara berisi `files` milik `init`/`setup`). Perintah service ditulis sebagai array argumen (tidak pernah lewat shell) dan hanya boleh menjalankan executable di dalam folder module itu sendiri.
 
 ```bash
 npm run registry keygen   # sekali saja; kunci privat di ~/.stackyard-registry/ (JANGAN di-commit)
 npm run registry hash     # isi sha256 yang kosong dengan mengunduh asset
 npm run registry build    # tulis registry/dist/ (index.json + .minisig + modules/)
+python3.12 registry/pylock.py pgadmin4==9.19 --python 3.12 --module pgadmin  # kunci dependency pip (hash) per platform
 ```
 
-Isi `registry/dist/` dipublikasikan ke GitHub Pages (URL default: `https://stackyard.github.io/registry`). Tanda tangan kompatibel dengan `minisign -Vm index.json -p src-tauri/registry.pub`.
+Field manifest tambahan:
+
+- `assets.<platform>.extra[]` — arsip tambahan (`url`, `sha256`, `format`, `strip`, `dest`) yang diekstrak ke subfolder module.
+- `module_files` — file yang dirender ke folder module saat install (path relatif).
+- `setup` — `files` + `commands` (`commands_windows`) yang dijalankan sekali saat install, dari dalam folder module (mis. `pip install --require-hashes`). Module baru dianggap terpasang jika setup berhasil.
+- `panel` — `{ "for": "<module>", "path": "/..." }`: module adalah panel web untuk module lain. Sebelum start, Stackyard menulis `{{run}}/panel.json` (port, token acak per start, daftar service target tanpa password); `path` boleh memakai `{{token}}`.
+
+Isi `registry/dist/` di-commit, lalu workflow **Registry** (`.github/workflows/registry.yml`) mem-publish-nya ke GitHub Pages setiap kali folder itu berubah di `main` (URL default: `https://pipsyrs.github.io/stackyard`). Sekali saja: **Settings → Pages → Source: GitHub Actions**. Tanda tangan kompatibel dengan `minisign -Vm index.json -p src-tauri/registry.pub`.
 
 ## Struktur
 
@@ -103,7 +113,8 @@ src-tauri/src/       Core Rust
   registry.rs        Index/manifest + verifikasi minisign & SHA-256
   download.rs        Unduhan dengan resume + verifikasi
   extract.rs         Ekstraksi zip/tar.gz yang aman
-  modules.rs         Install/uninstall, template konfigurasi
+  modules.rs         Install/uninstall, template konfigurasi, setup
+  panel.rs           Panel web (phpMyAdmin/pgAdmin): panel.json, URL bertoken
   ports.rs logs.rs settings.rs paths.rs tray.rs
 registry/            Manifest module + tool tanda tangan
 ```

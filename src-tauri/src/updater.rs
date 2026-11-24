@@ -31,6 +31,9 @@ fn map_err(e: tauri_plugin_updater::Error) -> AppError {
     match e {
         E::Minisign(_) | E::Base64(_) | E::SignatureUtf8(_) => AppError::Signature(e.to_string()),
         E::Reqwest(_) | E::Network(_) => AppError::Network(e.to_string()),
+        // Endpoint answered but has no release JSON / no build for this target.
+        E::ReleaseNotFound | E::TargetNotFound(_) | E::TargetsNotFound(_) => AppError::UpdateUnavailable(e.to_string()),
+        E::AuthenticationFailed => AppError::AuthCancelled,
         other => AppError::Internal(other.to_string()),
     }
 }

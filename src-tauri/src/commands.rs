@@ -10,7 +10,7 @@ use crate::registry::{compare_versions, platform_key, IndexEntry, LoadedIndex, R
 use crate::settings::{ServiceSettings, Settings, SettingsUpdate};
 use crate::state::AppState;
 use crate::supervisor::Status;
-use crate::{logs, tray};
+use crate::{logs, panel, tray};
 
 pub const EVENT_SERVICE_STATUS: &str = "service-status";
 pub const EVENT_SERVICES_CHANGED: &str = "services-changed";
@@ -226,11 +226,11 @@ pub async fn install_module(app: AppHandle, state: State<'_, AppState>, name: St
         &manifest,
         &version,
         |spec| state.port_for(&id, spec),
-        |done, total| {
-            // Throttle: one event per 256 KiB (and the final chunk).
-            if done == 0 || done - last >= 256 * 1024 || Some(done) == total {
+        |stage, done, total| {
+            // Throttle downloads: one event per 256 KiB (and the first/final chunk).
+            if stage != "download" || done == 0 || done.abs_diff(last) >= 256 * 1024 || Some(done) == total {
                 last = done;
-                emit("download", done, total);
+                emit(stage, done, total);
             }
         },
     )
@@ -279,6 +279,8 @@ pub struct ServiceInfo {
     /// Database login user, when the module generates credentials.
     credentials_user: Option<String>,
     initialized: bool,
+    /// Module this service is a web panel for (e.g. `mysql` for phpMyAdmin).
+    panel_for: Option<String>,
 }
 
 async fn service_info(state: &AppState, m: &InstalledModule) -> Option<ServiceInfo> {
@@ -297,6 +299,7 @@ async fn service_info(state: &AppState, m: &InstalledModule) -> Option<ServiceIn
         recent_crashes: snap.recent_crashes,
         credentials_user: spec.credentials.as_ref().map(|c| c.user.clone()),
         initialized: spec.init.is_none() || modules::is_initialized(&state.layout(), m),
+        panel_for: m.panel.as_ref().map(|p| p.target.clone()),
         id,
     })
 }
@@ -339,6 +342,11 @@ pub async fn start_service_inner(state: &AppState, id: &str) -> AppResult<()> {
         // Same guard as install/uninstall: one init per module at a time.
         let _guard = BusyGuard::acquire(state, &m.name)?;
         modules::initialize(&layout, &m, port, &launch.log_file).await?;
+    }
+    if m.panel.is_some() {
+        let port = port.ok_or(AppError::NoService)?;
+        let targets = panel::targets(&m, &modules::list_installed(&layout), |id, spec| state.port_for(id, spec));
+        panel::prepare(&layout, &m, port, targets)?;
     }
     state.supervisor.start(launch).await
 }
@@ -486,6 +494,34 @@ pub async fn open_service_url(app: AppHandle, state: State<'_, AppState>, id: St
         .ok_or(AppError::NoService)?;
     app.opener()
         .open_url(format!("http://localhost:{port}/"), None::<&str>)
+        .map_err(|e| AppError::Internal(e.to_string()))
+}
+
+const PANEL_READY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(120);
+
+/// Starts a web panel if needed, waits until it accepts connections, then
+/// opens it in the browser with its current access token.
+#[tauri::command]
+pub async fn open_panel(app: AppHandle, state: State<'_, AppState>, id: String) -> Cmd<()> {
+    let (name, version) = parse_service_id(&id)?;
+    let layout = state.layout();
+    let m = modules::load_installed(&layout, &name, &version)?;
+    let spec = m.service.as_ref().filter(|_| m.panel.is_some()).ok_or(AppError::NoService)?;
+    let port = state.port_for(&id, spec).ok_or(AppError::NoService)?;
+    start_service_inner(&state, &id).await?;
+    let deadline = std::time::Instant::now() + PANEL_READY_TIMEOUT;
+    while !panel::is_listening(port) {
+        let status = state.supervisor.snapshot(&id).await.status;
+        if matches!(status, Status::Stopped | Status::Crashed) {
+            return Err(AppError::Spawn(format!("{id} exited before it was ready")));
+        }
+        if std::time::Instant::now() > deadline {
+            return Err(AppError::Spawn(format!("{id} did not become ready")));
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    }
+    app.opener()
+        .open_url(panel::url(&layout, &m)?, None::<&str>)
         .map_err(|e| AppError::Internal(e.to_string()))
 }
 

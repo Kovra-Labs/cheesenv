@@ -70,14 +70,25 @@ async function sha256Url(url) {
   return h.digest('hex');
 }
 
+// Every downloadable of a version: [label, asset], including `extra` archives.
+const downloads = (v) =>
+  Object.entries(v.assets).flatMap(([p, a]) => [[p, a], ...(a.extra ?? []).map((x) => [`${p} ${x.dest}`, x])]);
+
 async function hash() {
+  const known = new Map(); // same URL in several platforms: download once
   for (const { file, json } of sources()) {
     let changed = false;
     for (const v of json.versions) {
-      for (const [platform, asset] of Object.entries(v.assets)) {
+      for (const [platform, asset] of downloads(v)) {
         if (asset.sha256) continue;
+        if (known.has(asset.url)) {
+          asset.sha256 = known.get(asset.url);
+          changed = true;
+          continue;
+        }
         process.stdout.write(`${json.name} ${v.version} ${platform} ... `);
         asset.sha256 = await sha256Url(asset.url);
+        known.set(asset.url, asset.sha256);
         console.log(asset.sha256.slice(0, 12));
         changed = true;
       }
@@ -99,7 +110,7 @@ function build() {
   const modules = [];
   for (const { json } of sources()) {
     for (const v of json.versions)
-      for (const [p, a] of Object.entries(v.assets))
+      for (const [p, a] of downloads(v))
         if (!/^[0-9a-f]{64}$/.test(a.sha256 ?? '')) throw new Error(`${json.name} ${v.version} ${p}: missing sha256 (run hash)`);
     const bytes = Buffer.from(JSON.stringify(json, null, 2) + '\n');
     fs.writeFileSync(path.join(out, 'modules', `${json.name}.json`), bytes);

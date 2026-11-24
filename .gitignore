@@ -1,6 +1,5 @@
 node_modules/
 dist/
-registry/dist/
 src-tauri/target/
 src-tauri/gen/
 *.log
@@ -9,3 +8,4 @@ src-tauri/gen/
 *.key
 *.key.json
 docs/
+__pycache__/
