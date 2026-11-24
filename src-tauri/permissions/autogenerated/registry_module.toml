@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-registry-module"
+description = "Enables the registry_module command without any pre-configured scope."
+commands.allow = ["registry_module"]
+
+[[permission]]
+identifier = "deny-registry-module"
+description = "Denies the registry_module command without any pre-configured scope."
+commands.deny = ["registry_module"]

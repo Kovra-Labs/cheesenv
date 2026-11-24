@@ -1,0 +1,11 @@
+node_modules/
+dist/
+registry/dist/
+src-tauri/target/
+src-tauri/gen/
+*.log
+.DS_Store
+# Registry signing keys must never be committed.
+*.key
+*.key.json
+docs/
