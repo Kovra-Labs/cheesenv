@@ -1,0 +1,77 @@
+{
+  "name": "php",
+  "category": "runtime",
+  "license": "PHP-3.01",
+  "homepage": "https://www.php.net",
+  "description": {
+    "en": "PHP runtime (PHP-FPM), multi-version",
+    "id": "Runtime PHP (PHP-FPM), multi-versi"
+  },
+  "versions": [
+    {
+      "version": "8.4.23",
+      "assets": {
+        "linux-x64": {
+          "url": "https://dl.static-php.dev/static-php-cli/common/php-8.4.23-fpm-linux-x86_64.tar.gz",
+          "sha256": "baa5ddcf2f9aabff78848cb6851bb104a4c0873347b8ee65eb9bcf4760a4d31a",
+          "format": "tar.gz"
+        },
+        "linux-arm64": {
+          "url": "https://dl.static-php.dev/static-php-cli/common/php-8.4.23-fpm-linux-aarch64.tar.gz",
+          "sha256": "dcd8795cf91f8f88e6b383efab8569dffa469891cf2d90225dcca9711f8115c4",
+          "format": "tar.gz"
+        },
+        "macos-x64": {
+          "url": "https://dl.static-php.dev/static-php-cli/common/php-8.4.23-fpm-macos-x86_64.tar.gz",
+          "sha256": "6d0a0ffd4dae2672037b599dbca3c2288db3f96efb2f29e0102bbdb1be177c5f",
+          "format": "tar.gz"
+        },
+        "macos-arm64": {
+          "url": "https://dl.static-php.dev/static-php-cli/common/php-8.4.23-fpm-macos-aarch64.tar.gz",
+          "sha256": "038ea93f7ec17d125ddb09c68d099e72d68c5ee4c235048fe5fe2f720de6484f",
+          "format": "tar.gz"
+        }
+      }
+    },
+    {
+      "version": "8.3.32",
+      "assets": {
+        "linux-x64": {
+          "url": "https://dl.static-php.dev/static-php-cli/common/php-8.3.32-fpm-linux-x86_64.tar.gz",
+          "sha256": "78d9ac9d52fedacc33d428196d0e5e9ace8ac010091c334daae85a669370f861",
+          "format": "tar.gz"
+        },
+        "linux-arm64": {
+          "url": "https://dl.static-php.dev/static-php-cli/common/php-8.3.32-fpm-linux-aarch64.tar.gz",
+          "sha256": "64685282cd98d89703fce3f25fe265ba72a3cf5c71ba828e516b1c89e073134f",
+          "format": "tar.gz"
+        },
+        "macos-x64": {
+          "url": "https://dl.static-php.dev/static-php-cli/common/php-8.3.32-fpm-macos-x86_64.tar.gz",
+          "sha256": "b8d2367b7c70a776d27fdc3d9b128c3a193e5cfd583bcdb7f484ebad601777e3",
+          "format": "tar.gz"
+        },
+        "macos-arm64": {
+          "url": "https://dl.static-php.dev/static-php-cli/common/php-8.3.32-fpm-macos-aarch64.tar.gz",
+          "sha256": "3164721ae2dd6615048180c44f63bede09ba42060c73d2027af8150d2ebbd0f6",
+          "format": "tar.gz"
+        }
+      }
+    }
+  ],
+  "service": {
+    "start": [
+      "{{bin}}/php-fpm",
+      "-F",
+      "-y",
+      "{{conf}}/php-fpm.conf",
+      "-c",
+      "{{conf}}/php.ini"
+    ],
+    "default_port": 9000
+  },
+  "config_templates": {
+    "php-fpm.conf": "[global]\npid = {{run}}/php-fpm.pid\nerror_log = {{logs}}/php-{{version}}-fpm.log\ndaemonize = no\n\n[www]\nlisten = 127.0.0.1:{{port}}\npm = dynamic\npm.max_children = 5\npm.start_servers = 2\npm.min_spare_servers = 1\npm.max_spare_servers = 3\ncatch_workers_output = yes\n",
+    "php.ini": "memory_limit = 256M\nupload_max_filesize = 64M\npost_max_size = 64M\nmax_execution_time = 120\ndisplay_errors = On\nerror_reporting = E_ALL\nlog_errors = On\nerror_log = {{logs}}/php-{{version}}-error.log\ndate.timezone = UTC\n"
+  }
+}

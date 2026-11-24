@@ -1,0 +1,75 @@
+{
+  "name": "nginx",
+  "category": "web-server",
+  "license": "BSD-2-Clause",
+  "homepage": "https://nginx.org",
+  "description": {
+    "en": "High-performance web server and reverse proxy",
+    "id": "Web server dan reverse proxy berperforma tinggi"
+  },
+  "versions": [
+    {
+      "version": "1.30.5",
+      "assets": {
+        "linux-x64": {
+          "url": "https://jirutka.github.io/nginx-binaries/nginx-1.30.5-x86_64-linux",
+          "sha256": "d61cdd38910c204e1cf5a9683983c6714126c11017d92be65303d4d1bbc487d0",
+          "format": "binary",
+          "bin_name": "nginx"
+        },
+        "linux-arm64": {
+          "url": "https://jirutka.github.io/nginx-binaries/nginx-1.30.5-aarch64-linux",
+          "sha256": "af23c8f3c8b173eb46ea1fec991273aa772ad4bcec18ad8310802a27cf9a6d77",
+          "format": "binary",
+          "bin_name": "nginx"
+        },
+        "macos-x64": {
+          "url": "https://jirutka.github.io/nginx-binaries/nginx-1.30.5-x86_64-darwin",
+          "sha256": "ad3e4ac0cc4d87b3c24422f3d832de310bdbbe4db4ebc57d86da4c5b45d71928",
+          "format": "binary",
+          "bin_name": "nginx"
+        },
+        "macos-arm64": {
+          "url": "https://jirutka.github.io/nginx-binaries/nginx-1.30.5-arm64-darwin",
+          "sha256": "0d5189a6107ca99b6b7589b93e08440ce5c6c7f60e71345d278cdeb4bcc1d994",
+          "format": "binary",
+          "bin_name": "nginx"
+        },
+        "windows-x64": {
+          "url": "https://jirutka.github.io/nginx-binaries/nginx-1.30.5-x86_64-win32.exe",
+          "sha256": "dadc0b6fdaf37423b5bd23d8334c7760ce0e80fd259e6c0cb8863b3be6eff243",
+          "format": "binary",
+          "bin_name": "nginx.exe"
+        }
+      }
+    }
+  ],
+  "service": {
+    "start": [
+      "{{bin}}/nginx",
+      "-p",
+      "{{conf}}",
+      "-c",
+      "{{conf}}/nginx.conf",
+      "-e",
+      "{{logs}}/nginx-{{version}}-error.log",
+      "-g",
+      "daemon off;"
+    ],
+    "start_windows": [
+      "{{bin}}/nginx.exe",
+      "-p",
+      "{{conf}}",
+      "-c",
+      "{{conf}}/nginx.conf",
+      "-e",
+      "{{logs}}/nginx-{{version}}-error.log",
+      "-g",
+      "daemon off;"
+    ],
+    "default_port": 80
+  },
+  "config_templates": {
+    "nginx.conf": "worker_processes 1;\npid {{run}}/nginx.pid;\nerror_log {{logs}}/nginx-{{version}}-error.log warn;\n\nevents {\n    worker_connections 1024;\n}\n\nhttp {\n    types {\n        text/html html htm;\n        text/css css;\n        text/plain txt;\n        application/javascript js mjs;\n        application/json json;\n        application/wasm wasm;\n        application/pdf pdf;\n        image/png png;\n        image/jpeg jpg jpeg;\n        image/gif gif;\n        image/svg+xml svg;\n        image/webp webp;\n        image/avif avif;\n        image/x-icon ico;\n        font/woff woff;\n        font/woff2 woff2;\n    }\n    default_type application/octet-stream;\n    sendfile on;\n    access_log {{logs}}/nginx-{{version}}-access.log;\n\n    client_body_temp_path {{run}}/client_body;\n    proxy_temp_path {{run}}/proxy;\n    fastcgi_temp_path {{run}}/fastcgi;\n    uwsgi_temp_path {{run}}/uwsgi;\n    scgi_temp_path {{run}}/scgi;\n\n    server {\n        listen 127.0.0.1:{{port}};\n        server_name localhost;\n        root {{www}};\n        index index.html index.htm;\n\n        location / {\n            try_files $uri $uri/ =404;\n        }\n    }\n}\n"
+  }
+}

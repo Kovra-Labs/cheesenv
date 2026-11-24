@@ -1,0 +1,78 @@
+{
+  "schema": 1,
+  "updated": "2026-11-24T08:22:20.604Z",
+  "modules": [
+    {
+      "name": "mysql",
+      "category": "database",
+      "description": {
+        "en": "MySQL Community Server (LTS)",
+        "id": "MySQL Community Server (LTS)"
+      },
+      "latest": "8.4.11",
+      "manifest_sha256": "9a57e8f9435ddf86c92bf9f15189453dc4d4657e9febf83b99d3da51ce1fd65f",
+      "license": "GPL-2.0",
+      "homepage": "https://www.mysql.com"
+    },
+    {
+      "name": "nginx",
+      "category": "web-server",
+      "description": {
+        "en": "High-performance web server and reverse proxy",
+        "id": "Web server dan reverse proxy berperforma tinggi"
+      },
+      "latest": "1.30.5",
+      "manifest_sha256": "ab6c535cd165b0c63899a3b47c78274a6ca9d0993f4267cec46105a88e8751d6",
+      "license": "BSD-2-Clause",
+      "homepage": "https://nginx.org"
+    },
+    {
+      "name": "pgadmin",
+      "category": "tools",
+      "description": {
+        "en": "pgAdmin 4 web panel for managing PostgreSQL",
+        "id": "Panel web pgAdmin 4 untuk mengelola PostgreSQL"
+      },
+      "latest": "9.19",
+      "manifest_sha256": "9924d20484ec7dfc3f16aa992532e329bd38d0f9d02d2974eb5678b7b0e2dfdc",
+      "license": "PostgreSQL",
+      "homepage": "https://www.pgadmin.org"
+    },
+    {
+      "name": "php",
+      "category": "runtime",
+      "description": {
+        "en": "PHP runtime (PHP-FPM), multi-version",
+        "id": "Runtime PHP (PHP-FPM), multi-versi"
+      },
+      "latest": "8.4.23",
+      "manifest_sha256": "dfaf5727f414e6bb611872f2a66b34ea617c911503a52df2993cf5e02cdd4cff",
+      "license": "PHP-3.01",
+      "homepage": "https://www.php.net"
+    },
+    {
+      "name": "phpmyadmin",
+      "category": "tools",
+      "description": {
+        "en": "Web panel for managing MySQL databases",
+        "id": "Panel web untuk mengelola database MySQL"
+      },
+      "latest": "5.2.3",
+      "manifest_sha256": "3a646ab064d28ac2d4e86179db21ef02e241118b67e8c9051acea878c4c297ca",
+      "license": "GPL-2.0",
+      "homepage": "https://www.phpmyadmin.net"
+    },
+    {
+      "name": "postgresql",
+      "category": "database",
+      "description": {
+        "en": "Advanced open source relational database",
+        "id": "Database relasional open source yang andal"
+      },
+      "latest": "18.7.0",
+      "manifest_sha256": "0344a5b6e4a4ca4e76b621c3e60730243dfa877409b55429844804a2cf703864",
+      "license": "PostgreSQL",
+      "homepage": "https://www.postgresql.org"
+    }
+  ]
+}
