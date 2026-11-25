@@ -23,13 +23,7 @@ const resetScroll = () => main.value?.scrollTo({ top: 0 });
     <aside class="side">
       <div class="brand">
         <svg viewBox="0 0 512 512" aria-hidden="true">
-          <defs>
-            <linearGradient id="brand-g" x1="0" y1="0" x2="1" y2="1">
-              <stop offset="0" stop-color="#42a5f5" />
-              <stop offset="1" stop-color="#1976d2" />
-            </linearGradient>
-          </defs>
-          <rect width="512" height="512" rx="128" fill="url(#brand-g)" />
+          <rect width="512" height="512" rx="128" fill="#2196F3" />
           <g fill="none" stroke="#fff" stroke-width="34" stroke-linejoin="round">
             <path d="M256 104 408 180 256 256 104 180Z" fill="#fff" />
             <path d="M104 256l152 76 152-76" />
