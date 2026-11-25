@@ -1,5 +1,6 @@
 export default {
   app: {
+    panelSetup: 'Menyiapkan {name}…',
     tagline: 'Dev stack lokal',
     menu: 'Menu utama',
     running: '{n} service berjalan',
@@ -119,12 +120,8 @@ export default {
     installedOk: '{name} {version} berhasil dipasang.',
     installedWith: '{name} {version} berhasil dipasang beserta {companions}.',
     companionFailed: 'Panel pendamping gagal dipasang ({error}). Bisa dipasang manual dari Pusat Module.',
-    companionsHint: '{companions} ikut terpasang otomatis bila belum ada. Port panel bisa diubah di kartu database pada halaman Service.',
     includes: 'Termasuk {name}',
-    companionAuto: 'ikut dipasang',
-    companionMissing: 'belum terpasang',
-    updatePanel: 'Perbarui ke {v}',
-    panelUpdated: '{name} diperbarui ke {version}. Port & data tetap.',
+    builtIn: 'bawaan aplikasi, diperbarui otomatis',
     uninstalledOk: '{name} {version} dihapus.',
     confirmUninstall: 'Hapus {name} {version}?',
     deleteData: 'Hapus juga data (database, dsb.) — tidak bisa dibatalkan',

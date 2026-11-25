@@ -2,6 +2,7 @@ import type id from './id';
 
 const en: typeof id = {
   app: {
+    panelSetup: 'Setting up {name}…',
     tagline: 'Local dev stack',
     menu: 'Main menu',
     running: '{n} services running',
@@ -121,12 +122,8 @@ const en: typeof id = {
     installedOk: '{name} {version} installed.',
     installedWith: '{name} {version} installed together with {companions}.',
     companionFailed: 'The companion panel could not be installed ({error}). You can install it from the Module Hub.',
-    companionsHint: '{companions} is installed along with it if missing. Change the panel port in the database card on the Services page.',
     includes: 'Includes {name}',
-    companionAuto: 'installed along',
-    companionMissing: 'not installed',
-    updatePanel: 'Update to {v}',
-    panelUpdated: '{name} updated to {version}. Port & data kept.',
+    builtIn: 'built in, updated automatically',
     uninstalledOk: '{name} {version} removed.',
     confirmUninstall: 'Uninstall {name} {version}?',
     deleteData: 'Also delete data (databases, etc.) — cannot be undone',

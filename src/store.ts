@@ -1,5 +1,5 @@
 import { computed, reactive } from 'vue';
-import { api, events, isAppError, type AppInfo, type ServiceInfo, type Settings, type UpdateInfo } from './api';
+import { api, events, isAppError, type AppInfo, type InstallProgress, type ServiceInfo, type Settings, type UpdateInfo } from './api';
 import { i18n } from './i18n';
 
 export interface Toast {
@@ -15,6 +15,8 @@ export const store = reactive({
   services: [] as ServiceInfo[],
   toasts: [] as Toast[],
   update: null as UpdateInfo | null,
+  /** A built-in panel being downloaded/updated in the background, if any. */
+  panelSetup: null as InstallProgress | null,
 });
 
 let toastSeq = 0;
@@ -74,13 +76,8 @@ export async function reloadServices() {
   store.services = await api.listServices();
 }
 
-/**
- * Services that get a card of their own: a web panel is shown inside the card
- * of its database, and on its own only when none of its databases is installed.
- */
-export const cardServices = computed(() =>
-  store.services.filter((s) => !s.panel_for.some((target) => store.services.some((o) => o.name === target))),
-);
+/** Services that get a card of their own; built-in panels are shown inside their database's card. */
+export const cardServices = computed(() => store.services.filter((s) => !s.panel_for.length));
 
 export const runningCount = computed(() => store.services.filter((s) => s.status === 'running').length);
 
@@ -93,6 +90,9 @@ export async function initStore() {
   await events.serviceStatus((snap) => {
     const svc = store.services.find((s) => s.id === snap.id);
     if (svc) Object.assign(svc, snap);
+  });
+  await events.panelsSetup((p) => {
+    store.panelSetup = p.stage === 'done' || p.stage === 'failed' ? null : p;
   });
   await events.servicesChanged(async () => {
     store.info = await api.appInfo();

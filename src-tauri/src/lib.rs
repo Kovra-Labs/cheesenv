@@ -65,6 +65,20 @@ pub fn run() {
             app.manage(state);
             tray::create(&handle, &lang)?;
 
+            // Built-in panels: installed/updated in the background on every start.
+            let panels_handle = handle.clone();
+            tauri::async_runtime::spawn(async move {
+                let state = panels_handle.state::<AppState>();
+                let emit = |name: &str, version: &str, stage: &str, downloaded: u64, total: Option<u64>| {
+                    let p = commands::InstallProgress { name, version, stage, downloaded, total };
+                    let _ = panels_handle.emit(commands::EVENT_PANELS_SETUP, p);
+                };
+                for e in commands::ensure_panels(&state, &emit).await {
+                    eprintln!("[stackyard] built-in panel {e}");
+                }
+                let _ = panels_handle.emit(commands::EVENT_SERVICES_CHANGED, ());
+            });
+
             // Auto-start services flagged by the user (PRD §4 service manager).
             tauri::async_runtime::spawn(async move {
                 let state = handle.state::<AppState>();
@@ -94,7 +108,6 @@ pub fn run() {
             commands::registry_index,
             commands::registry_module,
             commands::install_module,
-            commands::update_panel,
             commands::uninstall_module,
             commands::set_runtime,
             commands::list_services,
@@ -397,9 +410,9 @@ mod e2e {
         commands::start_service_inner(&st, &old_id).await.unwrap();
 
         // Not a panel: refused.
-        assert!(commands::update_panel_inner(&st, "mariadb", &none).await.is_err());
+        assert!(commands::update_panel(&st, "mariadb", &none).await.is_err());
 
-        assert_eq!(commands::update_panel_inner(&st, "phpmyadmin", &none).await.unwrap(), new);
+        assert_eq!(commands::update_panel(&st, "phpmyadmin", &none).await.unwrap(), new);
         assert!(modules::load_installed(&layout, "phpmyadmin", &old).is_err(), "old version removed");
         assert!(modules::load_installed(&layout, "phpmyadmin", &new).is_ok());
         assert!(!st.supervisor.is_active(&old_id).await, "old panel stopped");
@@ -409,8 +422,33 @@ mod e2e {
         assert!(layout.data_dir("phpmyadmin", &new).join("marker").exists(), "data moved");
 
         // Already current: nothing to do.
-        assert_eq!(commands::update_panel_inner(&st, "phpmyadmin", &none).await.unwrap(), new);
+        assert_eq!(commands::update_panel(&st, "phpmyadmin", &none).await.unwrap(), new);
         st.supervisor.stop_all().await;
+    }
+
+    /// A fresh app installs the built-in panels itself; a second start changes nothing.
+    #[tokio::test]
+    #[ignore]
+    async fn panels_are_built_in() {
+        if std::env::var_os("STACKYARD_E2E_REGISTRY").is_none() {
+            return;
+        }
+        let tmp = tempfile::tempdir().unwrap();
+        let st = state(tmp.path());
+        st.layout().ensure().unwrap();
+        let layout = st.layout();
+        let none = |_: &str, _: &str, _: &str, _: u64, _: Option<u64>| {};
+        assert_eq!(commands::ensure_panels(&st, &none).await, Vec::<String>::new());
+        let installed = |l: &paths::Layout| {
+            let mut v: Vec<_> = modules::list_installed(l).into_iter().map(|m| format!("{}@{}", m.name, m.version)).collect();
+            v.sort();
+            v
+        };
+        let first = installed(&layout);
+        assert_eq!(first.len(), 2, "{first:?}");
+        assert!(first[0].starts_with("pgadmin@") && first[1].starts_with("phpmyadmin@"), "{first:?}");
+        assert_eq!(commands::ensure_panels(&st, &none).await, Vec::<String>::new());
+        assert_eq!(installed(&layout), first);
     }
 
     fn client(st: &AppState, id: &str, bin: &str) -> std::path::PathBuf {

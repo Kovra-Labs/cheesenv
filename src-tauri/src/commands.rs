@@ -15,6 +15,8 @@ use crate::{logs, panel, runtimes, tray};
 pub const EVENT_SERVICE_STATUS: &str = "service-status";
 pub const EVENT_SERVICES_CHANGED: &str = "services-changed";
 pub const EVENT_INSTALL_PROGRESS: &str = "install-progress";
+/// Progress of the built-in panels being installed/updated in the background.
+pub const EVENT_PANELS_SETUP: &str = "panels-setup";
 
 type Cmd<T> = Result<T, AppError>;
 
@@ -178,12 +180,12 @@ pub async fn registry_module(state: State<'_, AppState>, name: String) -> Cmd<Ma
 }
 
 #[derive(Clone, Serialize)]
-struct InstallProgress<'a> {
-    name: &'a str,
-    version: &'a str,
-    stage: &'a str,
-    downloaded: u64,
-    total: Option<u64>,
+pub(crate) struct InstallProgress<'a> {
+    pub name: &'a str,
+    pub version: &'a str,
+    pub stage: &'a str,
+    pub downloaded: u64,
+    pub total: Option<u64>,
 }
 
 /// Holds a module name in `busy_modules` for the guard's lifetime.
@@ -259,7 +261,8 @@ pub(crate) async fn install_with_companions(
         };
         match installed {
             Ok(true) => outcome.companions.push(companion.clone()),
-            Ok(false) => {}
+            // No build for this platform, or being installed by `ensure_panels` right now.
+            Ok(false) | Err(AppError::Busy) => {}
             Err(e) => {
                 eprintln!("[stackyard] companion {companion} of {name}: {e}");
                 outcome.companion_errors.push(format!("{companion}: {e}"));
@@ -284,20 +287,41 @@ async fn latest_for_platform(state: &AppState, name: &str) -> AppResult<Option<(
     Ok(latest.map(|v| (manifest, v)))
 }
 
-/// Updates a web panel (phpMyAdmin, pgAdmin) in place: unlike databases it is
-/// a single-instance tool, so the newest version replaces the installed ones,
-/// keeping the port, autostart and data of the newest of them.
-#[tauri::command]
-pub async fn update_panel(app: AppHandle, state: State<'_, AppState>, name: String) -> Cmd<String> {
-    let emit = |name: &str, version: &str, stage: &str, downloaded: u64, total: Option<u64>| {
-        let _ = app.emit(EVENT_INSTALL_PROGRESS, InstallProgress { name, version, stage, downloaded, total });
+/// The web panels (phpMyAdmin, pgAdmin) are built in: every companion listed
+/// in the registry is installed, and kept at its newest version, in the
+/// background when the app starts. Returns the failures (`"<name>: <reason>"`).
+pub(crate) async fn ensure_panels(state: &AppState, progress: &Progress<'_>) -> Vec<String> {
+    let index = match load_index(state, true).await {
+        Ok(loaded) => loaded.index,
+        Err(e) => return vec![format!("registry: {e}")],
     };
-    let result = update_panel_inner(&state, &name, &emit).await;
-    let _ = app.emit(EVENT_SERVICES_CHANGED, ());
-    Ok(result?)
+    let panels: std::collections::BTreeSet<String> =
+        index.modules.iter().flat_map(|m| m.companions.iter().cloned()).collect();
+    let mut errors = Vec::new();
+    for name in panels {
+        let installed = modules::list_installed(&state.layout()).iter().any(|m| m.name == name);
+        let result = if installed {
+            update_panel(state, &name, progress).await.map(drop)
+        } else {
+            match latest_for_platform(state, &name).await {
+                Ok(Some((manifest, version))) if manifest.panel.is_some() => {
+                    install_manifest(state, &manifest, &version, progress).await
+                }
+                Ok(_) => Ok(()), // not a panel, or no build for this platform
+                Err(e) => Err(e),
+            }
+        };
+        if let Err(e) = result {
+            errors.push(format!("{name}: {e}"));
+        }
+    }
+    errors
 }
 
-pub(crate) async fn update_panel_inner(state: &AppState, name: &str, progress: &Progress<'_>) -> AppResult<String> {
+/// Updates a web panel in place: unlike databases it is a single-instance
+/// tool, so the newest version replaces the installed ones, keeping the port,
+/// autostart and data of the newest of them.
+pub(crate) async fn update_panel(state: &AppState, name: &str, progress: &Progress<'_>) -> AppResult<String> {
     validate_name(name)?;
     let layout = state.layout();
     let old: Vec<_> = modules::list_installed(&layout).into_iter().filter(|m| m.name == name).collect();

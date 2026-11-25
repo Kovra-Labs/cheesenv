@@ -3,6 +3,7 @@ import logoUrl from './assets/logo.webp';
 import { ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { store, runningCount, dismissToast } from './store';
+import { fmtBytes } from './ui';
 import AppIcon, { type IconName } from './components/AppIcon.vue';
 
 const { t } = useI18n();
@@ -41,6 +42,15 @@ const resetScroll = () => main.value?.scrollTo({ top: 0 });
       </nav>
 
       <div class="side-foot">
+        <Transition name="fade">
+          <p v-if="store.panelSetup" class="setup hint" role="status">
+            <AppIcon name="download" :size="16" />
+            <span>
+              {{ t('app.panelSetup', { name: store.panelSetup.name }) }}
+              <span v-if="store.panelSetup.stage === 'download'" class="mono">{{ fmtBytes(store.panelSetup.downloaded) }}</span>
+            </span>
+          </p>
+        </Transition>
         <div class="status" :class="{ on: runningCount }">
           <span class="pulse" aria-hidden="true" />
           <span>{{ runningCount ? t('app.running', { n: runningCount }) : t('app.idle') }}</span>
@@ -243,6 +253,18 @@ const resetScroll = () => main.value?.scrollTo({ top: 0 });
     transform: scale(2.6);
     opacity: 0;
   }
+}
+
+.setup {
+  display: flex;
+  gap: 8px;
+  padding: 0 14px;
+  font-size: 12.5px;
+}
+
+.setup .icon {
+  flex: none;
+  margin-top: 2px;
 }
 
 .ver {

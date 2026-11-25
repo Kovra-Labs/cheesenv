@@ -164,8 +164,6 @@ export const api = {
   registryIndex: (force = false) => invoke<IndexView>('registry_index', { force }),
   registryModule: (name: string) => invoke<ManifestView>('registry_module', { name }),
   installModule: (name: string, version: string) => invoke<InstallOutcome>('install_module', { name, version }),
-  /** Replaces the installed versions of a web panel with the newest; returns it. */
-  updatePanel: (name: string) => invoke<string>('update_panel', { name }),
   uninstallModule: (name: string, version: string, deleteData: boolean) =>
     invoke<void>('uninstall_module', { name, version, deleteData }),
   setRuntime: (name: string, version: string | null) => invoke<void>('set_runtime', { name, version }),
@@ -200,6 +198,9 @@ export const events = {
   servicesChanged: (cb: () => void): Promise<UnlistenFn> => listen('services-changed', () => cb()),
   installProgress: (cb: (p: InstallProgress) => void): Promise<UnlistenFn> =>
     listen<InstallProgress>('install-progress', (e) => cb(e.payload)),
+  /** Built-in panels (phpMyAdmin, pgAdmin) being installed/updated in the background. */
+  panelsSetup: (cb: (p: InstallProgress) => void): Promise<UnlistenFn> =>
+    listen<InstallProgress>('panels-setup', (e) => cb(e.payload)),
   updateProgress: (cb: (p: UpdateProgress) => void): Promise<UnlistenFn> =>
     listen<UpdateProgress>('update-progress', (e) => cb(e.payload)),
 };

@@ -27,18 +27,11 @@ const deleteData = ref(false);
 
 let unlisten: UnlistenFn | undefined;
 
-const byName = computed(() => Object.fromEntries((index.value?.modules ?? []).map((m) => [m.name, m])));
-/**
- * Panels (phpMyAdmin, pgAdmin) are listed inside the card of their database;
- * on their own only when installed while none of their databases is.
- */
+/** The built-in panels (phpMyAdmin, pgAdmin) are installed and updated by the app, not from the hub. */
 const modules = computed(() => {
   const all = index.value?.modules ?? [];
-  const hosts = (name: string) => all.filter((m) => m.companions?.includes(name));
-  return all.filter((m) => {
-    const of = hosts(m.name);
-    return !of.length || (m.installed.length > 0 && !of.some((h) => h.installed.length));
-  });
+  const panels = new Set(all.flatMap((m) => m.companions ?? []));
+  return all.filter((m) => !panels.has(m.name));
 });
 const categories = computed(() => ['all', ...new Set(modules.value.map((m) => m.category))]);
 const installedCount = computed(() => modules.value.filter((m) => m.installed.length).length);
@@ -123,27 +116,6 @@ async function install(name: string, version: string) {
     pending.delete(k);
     delete progress[k];
   }
-}
-
-async function updatePanel(name: string) {
-  const k = key(name, 'update');
-  pending.add(k);
-  try {
-    const version = await api.updatePanel(name);
-    toast(t('modules.panelUpdated', { name, version }));
-    await load();
-    if (manifests[name]) manifests[name] = await api.registryModule(name);
-  } catch (e) {
-    toast(errorText(e), 'error');
-  } finally {
-    pending.delete(k);
-    for (const p of Object.keys(progress)) if (p.startsWith(`${name}@`)) delete progress[p];
-  }
-}
-
-/** Download/setup progress of any version of `name` (a panel being installed along or updated). */
-function progressOf(name: string) {
-  return Object.values(progress).find((p) => p.name === name) ?? null;
 }
 
 function askUninstall(name: string, version: string) {
@@ -259,36 +231,10 @@ onUnmounted(() => unlisten?.());
           <span v-else-if="m.installed.length" class="badge ok"><AppIcon name="check" :size="14" />{{ t('modules.isInstalled') }}</span>
         </div>
         <p class="desc">{{ describe(m) }}</p>
-        <div v-for="c in m.companions ?? []" :key="c" class="companion">
+        <p v-for="c in m.companions ?? []" :key="c" class="companion">
           <AppIcon name="external" :size="16" />
-          <span class="c-name">{{ t('modules.includes', { name: c }) }}</span>
-          <span v-if="byName[c]?.installed.length" class="badge mono">{{ byName[c].installed.join(', ') }}</span>
-          <span v-else class="hint">{{ m.installed.length ? t('modules.companionMissing') : t('modules.companionAuto') }}</span>
-          <span v-if="progressOf(c)" class="hint mono">{{ progressText(progressOf(c)!) }}</span>
-          <span class="v-actions">
-            <button
-              v-if="byName[c]?.update_available"
-              class="btn sm primary"
-              :disabled="pending.has(key(c, 'update'))"
-              @click="updatePanel(c)"
-            >
-              <AppIcon
-                :name="pending.has(key(c, 'update')) ? 'restart' : 'download'"
-                :size="16"
-                :class="{ spin: pending.has(key(c, 'update')) }"
-              />
-              {{ t('modules.updatePanel', { v: byName[c].latest }) }}
-            </button>
-            <button
-              v-else-if="byName[c] && !byName[c].installed.length && m.installed.length"
-              class="btn sm"
-              :disabled="pending.has(key(c, byName[c].latest))"
-              @click="install(c, byName[c].latest)"
-            >
-              <AppIcon name="download" :size="16" />{{ t('common.install') }}
-            </button>
-          </span>
-        </div>
+          <span><b>{{ t('modules.includes', { name: c }) }}</b> · {{ t('modules.builtIn') }}</span>
+        </p>
         <div class="meta">
           <span class="badge info mono">{{ t('modules.latest', { v: m.latest }) }}</span>
           <span v-if="m.installed.length" class="badge mono">{{ t('modules.installed', { v: m.installed.join(', ') }) }}</span>
@@ -356,10 +302,6 @@ onUnmounted(() => unlisten?.());
                 </CollapseTransition>
               </li>
             </ul>
-            <p v-if="manifests[m.name]?.companions.length" class="hint runtime-hint">
-              <AppIcon name="info" :size="16" />
-              <span>{{ t('modules.companionsHint', { companions: manifests[m.name].companions.join(', ') }) }}</span>
-            </p>
             <p v-if="manifests[m.name]?.runtime" class="hint runtime-hint">
               <AppIcon name="info" :size="16" />
               <span>{{ t('modules.runtimeHint') }} <RouterLink to="/settings#terminal">{{ t('modules.pathHelp') }}</RouterLink></span>
@@ -514,18 +456,16 @@ onUnmounted(() => unlisten?.());
 .companion {
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
   gap: 8px;
-  min-height: 48px;
-  padding: 6px 6px 6px 12px;
+  padding: 8px 12px;
   border-radius: var(--radius-sm);
   background: var(--surface-2);
   color: var(--ink-2);
+  font-size: 13.5px;
 }
 
-.c-name {
+.companion b {
   color: var(--ink);
-  font-weight: 600;
 }
 
 .runtime-hint {
