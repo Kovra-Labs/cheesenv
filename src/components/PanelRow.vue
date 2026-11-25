@@ -20,6 +20,8 @@ watch(
 const active = computed(() => props.panel.status !== 'stopped' && props.panel.status !== 'crashed');
 const hostRunning = computed(() => props.host.status === 'running');
 const portDirty = computed(() => portInput.value !== props.panel.port);
+/** The panel follows its database: its port changes only while both are stopped. */
+const portLocked = computed(() => active.value || hostRunning.value);
 
 async function run(fn: () => Promise<unknown>) {
   busy.value = true;
@@ -67,8 +69,8 @@ async function savePort() {
         type="number"
         min="1"
         max="65535"
-        :disabled="active || busy"
-        :title="active ? t('services.stopPanelFirst') : undefined"
+        :disabled="portLocked || busy"
+        :title="portLocked ? t('services.stopPanelFirst', { name: host.name }) : undefined"
         @keyup.enter="portDirty && savePort()"
       />
       <Transition name="fade">
@@ -89,15 +91,8 @@ async function savePort() {
         <AppIcon :name="busy && !active ? 'restart' : 'external'" :size="16" :class="{ spin: busy && !active }" />
         {{ busy && !active ? t('services.panelStarting') : t('services.openPanel', { name: panel.name }) }}
       </button>
-      <button
-        v-if="active"
-        class="btn sm icon-only"
-        :disabled="busy || panel.status === 'stopping'"
-        :title="t('services.stopPanel', { name: panel.name })"
-        :aria-label="t('services.stopPanel', { name: panel.name })"
-        @click="stop"
-      >
-        <AppIcon name="stop" :size="16" />
+      <button v-if="active" class="btn sm danger" :disabled="busy || panel.status === 'stopping'" @click="stop">
+        <AppIcon name="stop" :size="16" />{{ t('common.stop') }}
       </button>
     </div>
   </div>

@@ -4,9 +4,10 @@ import { useI18n } from 'vue-i18n';
 import type { UnlistenFn } from '@tauri-apps/api/event';
 import { api, events, type IndexView, type InstallProgress, type ManifestView, type ModuleView } from '../api';
 import { attempt, errorText, toast } from '../store';
-import { categoryIcon, categoryLabel, fmtBytes } from '../ui';
+import { categoryLabel, fmtBytes } from '../ui';
 import AppIcon from '../components/AppIcon.vue';
 import CollapseTransition from '../components/CollapseTransition.vue';
+import ModuleLogo from '../components/ModuleLogo.vue';
 
 const INSTALLED = 'installed';
 
@@ -210,35 +211,37 @@ onUnmounted(() => unlisten?.());
 
     <section v-else-if="loading && !index" class="grid" aria-busy="true">
       <div v-for="i in 6" :key="i" class="card mod sk">
-        <div class="mod-top">
+        <div class="mod-row">
           <span class="skeleton sk-tile" />
-          <span class="skeleton sk-title" />
+          <div class="mod-main">
+            <span class="skeleton sk-title" />
+            <span class="skeleton sk-line short" />
+          </div>
         </div>
-        <span class="skeleton sk-line" />
-        <span class="skeleton sk-line short" />
       </div>
     </section>
 
     <TransitionGroup v-if="index" tag="section" name="list" class="grid">
       <article v-for="m in filtered" :key="m.name" class="card mod" :class="{ open: expanded === m.name }">
-        <div class="mod-top">
-          <span class="tile"><AppIcon :name="categoryIcon(m.category)" :size="22" /></span>
-          <div class="mod-name">
-            <h2>{{ m.name }}</h2>
-            <span class="hint">{{ categoryLabel(m.category) }}</span>
+        <div class="mod-row">
+          <ModuleLogo :name="m.name" :category="m.category" />
+          <div class="mod-main">
+            <div class="mod-title">
+              <h2>{{ m.name }}</h2>
+              <span class="hint">{{ categoryLabel(m.category) }}</span>
+              <span v-if="m.update_available" class="badge warn">{{ t('modules.updateAvailable') }}</span>
+              <span v-else-if="m.installed.length" class="badge ok"><AppIcon name="check" :size="14" />{{ t('modules.isInstalled') }}</span>
+            </div>
+            <p class="desc">{{ describe(m) }}</p>
+            <div class="meta">
+              <span class="badge info mono">{{ t('modules.latest', { v: m.latest }) }}</span>
+              <span v-if="m.installed.length" class="badge mono">{{ t('modules.installed', { v: m.installed.join(', ') }) }}</span>
+              <span v-if="m.license" class="badge">{{ m.license }}</span>
+              <span v-for="c in m.companions ?? []" :key="c" class="badge" :title="t('modules.builtIn')">
+                <AppIcon name="external" :size="14" />{{ t('modules.includes', { name: c }) }}
+              </span>
+            </div>
           </div>
-          <span v-if="m.update_available" class="badge warn">{{ t('modules.updateAvailable') }}</span>
-          <span v-else-if="m.installed.length" class="badge ok"><AppIcon name="check" :size="14" />{{ t('modules.isInstalled') }}</span>
-        </div>
-        <p class="desc">{{ describe(m) }}</p>
-        <p v-for="c in m.companions ?? []" :key="c" class="companion">
-          <AppIcon name="external" :size="16" />
-          <span><b>{{ t('modules.includes', { name: c }) }}</b> · {{ t('modules.builtIn') }}</span>
-        </p>
-        <div class="meta">
-          <span class="badge info mono">{{ t('modules.latest', { v: m.latest }) }}</span>
-          <span v-if="m.installed.length" class="badge mono">{{ t('modules.installed', { v: m.installed.join(', ') }) }}</span>
-          <span v-if="m.license" class="badge">{{ m.license }}</span>
           <button class="btn sm toggle" :class="{ primary: !m.installed.length && expanded !== m.name }" :aria-expanded="expanded === m.name" @click="toggle(m.name)">
             {{ expanded === m.name ? t('modules.hideVersions') : t('modules.showVersions') }}
             <AppIcon name="chevron" :size="16" class="chev" />
@@ -353,15 +356,37 @@ onUnmounted(() => unlisten?.());
 
 .grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
-  gap: 16px;
-  align-items: start;
+  gap: 12px;
 }
 
 .mod {
   display: grid;
   gap: 12px;
-  padding: 20px;
+  padding: 16px 20px;
+}
+
+.mod-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.mod-main {
+  display: grid;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+}
+
+.mod-title {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+}
+
+.mod-title .hint {
+  font-size: 12.5px;
 }
 
 .mod:hover {
@@ -374,25 +399,8 @@ onUnmounted(() => unlisten?.());
   box-shadow: 0 0 0 3px var(--primary-soft);
 }
 
-.mod-top {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-}
-
-.mod-name {
-  display: grid;
-  flex: 1;
-  min-width: 0;
-}
-
-.mod-name .hint {
-  font-size: 12.5px;
-}
-
 .desc {
   color: var(--ink-2);
-  min-height: 2lh;
 }
 
 .meta {
@@ -403,7 +411,17 @@ onUnmounted(() => unlisten?.());
 }
 
 .toggle {
-  margin-left: auto;
+  flex: none;
+}
+
+@media (max-width: 720px) {
+  .mod-row {
+    flex-wrap: wrap;
+  }
+
+  .toggle {
+    margin-left: 60px;
+  }
 }
 
 .chev {
@@ -453,20 +471,7 @@ onUnmounted(() => unlisten?.());
   font-weight: 600;
 }
 
-.companion {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
-  border-radius: var(--radius-sm);
-  background: var(--surface-2);
-  color: var(--ink-2);
-  font-size: 13.5px;
-}
 
-.companion b {
-  color: var(--ink);
-}
 
 .runtime-hint {
   display: flex;
