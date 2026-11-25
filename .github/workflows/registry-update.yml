@@ -1,0 +1,75 @@
+name: Registry update
+
+# Weekly: checks the official upstream sources (registry/upstream.mjs) and
+# opens a pull request with new versions, URLs and SHA-256 sums. Missing
+# Redis/Apache builds are started on "Binaries"; when one finishes, this runs
+# again to add them. Signing stays offline: after merging, run
+# `npm run registry build` locally and push registry/dist.
+on:
+  schedule:
+    - cron: '17 2 * * 1'
+  workflow_dispatch:
+  workflow_run:
+    workflows: [Binaries]
+    types: [completed]
+
+permissions:
+  contents: write
+  pull-requests: write
+  actions: write
+
+concurrency:
+  group: registry-update
+
+jobs:
+  update:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GITHUB_TOKEN: ${{ github.token }}
+      BRANCH: registry/upstream
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - id: check
+        # One unreachable source must not block the others' updates.
+        run: node registry/upstream.mjs update || echo "::warning::some upstream sources failed, see the log"
+
+      # Only from the schedule/manual run, so a failing build is not retried in a loop.
+      - name: Start missing builds
+        if: github.event_name != 'workflow_run' && steps.check.outputs.builds != '[]'
+        env:
+          BUILDS: ${{ steps.check.outputs.builds }}
+        run: |
+          if [ -n "$(gh run list --workflow binaries.yml --status in_progress --json databaseId -q '.[].databaseId')$(gh run list --workflow binaries.yml --status queued --json databaseId -q '.[].databaseId')" ]; then
+            echo "a build is already running"; exit 0
+          fi
+          echo "$BUILDS" | jq -c '.[]' | while read -r b; do
+            gh workflow run binaries.yml -f module="$(jq -r .module <<<"$b")" -f version="$(jq -r .version <<<"$b")"
+          done
+
+      - name: Open pull request
+        if: steps.check.outputs.changed != ''
+        env:
+          CHANGED: ${{ steps.check.outputs.changed }}
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git switch -C "$BRANCH"
+          git add registry/modules
+          git commit -m "chore(registry): update $CHANGED"
+          git push --force origin "$BRANCH"
+          if [ -z "$(gh pr list --head "$BRANCH" --state open --json number -q '.[].number')" ]; then
+            gh pr create --head "$BRANCH" --title "Registry: upstream updates" --body "Automated by .github/workflows/registry-update.yml.
+
+          Updated: $CHANGED
+
+          After merging, sign and publish locally:
+          \`\`\`
+          npm run registry build
+          git add registry/dist && git commit -m 'chore(registry): publish' && git push
+          \`\`\`"
+          fi

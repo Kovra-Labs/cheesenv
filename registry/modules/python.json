@@ -1,0 +1,104 @@
+{
+  "name": "python",
+  "category": "runtime",
+  "license": "PSF-2.0",
+  "homepage": "https://www.python.org",
+  "description": {
+    "en": "Python interpreter with pip (portable build)",
+    "id": "Interpreter Python beserta pip (build portable)"
+  },
+  "versions": [
+    {
+      "version": "3.15.2",
+      "assets": {
+        "linux-x64": {
+          "url": "https://github.com/astral-sh/python-build-standalone/releases/download/20261124/cpython-3.15.2%2B20261124-x86_64-unknown-linux-gnu-install_only.tar.gz",
+          "sha256": "9fbcb18c390909c3f30542d097a14443bee7a5c678d4b06b5b63cc7a9af624d3",
+          "format": "tar.gz",
+          "strip": 1,
+          "bin_dir": "bin"
+        },
+        "linux-arm64": {
+          "url": "https://github.com/astral-sh/python-build-standalone/releases/download/20261124/cpython-3.15.2%2B20261124-aarch64-unknown-linux-gnu-install_only.tar.gz",
+          "sha256": "f0d81c7a7490c51676e44462c9630ceb9bed6298af6cfcdb0c05c1c798c971e6",
+          "format": "tar.gz",
+          "strip": 1,
+          "bin_dir": "bin"
+        },
+        "macos-x64": {
+          "url": "https://github.com/astral-sh/python-build-standalone/releases/download/20261124/cpython-3.15.2%2B20261124-x86_64-apple-darwin-install_only.tar.gz",
+          "sha256": "3b02a3d29d7ca1260228b644a04c19ee1e22d26e69133365db8b94ebacfef4b7",
+          "format": "tar.gz",
+          "strip": 1,
+          "bin_dir": "bin"
+        },
+        "macos-arm64": {
+          "url": "https://github.com/astral-sh/python-build-standalone/releases/download/20261124/cpython-3.15.2%2B20261124-aarch64-apple-darwin-install_only.tar.gz",
+          "sha256": "ca5a25ce351817d7c6fcc7c2f2c327ec28c540f728d2a5c8b4e380ed92c68936",
+          "format": "tar.gz",
+          "strip": 1,
+          "bin_dir": "bin"
+        },
+        "windows-x64": {
+          "url": "https://github.com/astral-sh/python-build-standalone/releases/download/20261124/cpython-3.15.2%2B20261124-x86_64-pc-windows-msvc-install_only.tar.gz",
+          "sha256": "7e46b25f73bda26d6e9f4b711e2a51bb7fcd0f6798d76ba07d37655e308c3346",
+          "format": "tar.gz",
+          "strip": 1,
+          "bin_dir": ""
+        }
+      }
+    },
+    {
+      "version": "3.14.10",
+      "assets": {
+        "linux-x64": {
+          "url": "https://github.com/astral-sh/python-build-standalone/releases/download/20261124/cpython-3.14.10%2B20261124-x86_64-unknown-linux-gnu-install_only.tar.gz",
+          "sha256": "bfa2f9fe1691f14a98c37e206641058ad7116db117ac924fdcab744987107ad8",
+          "format": "tar.gz",
+          "strip": 1,
+          "bin_dir": "bin"
+        },
+        "linux-arm64": {
+          "url": "https://github.com/astral-sh/python-build-standalone/releases/download/20261124/cpython-3.14.10%2B20261124-aarch64-unknown-linux-gnu-install_only.tar.gz",
+          "sha256": "4a5d38d83b7cab3b1ee53b9fe398ba5bf43d737acca4f7bc06b9deb6ac0e7405",
+          "format": "tar.gz",
+          "strip": 1,
+          "bin_dir": "bin"
+        },
+        "macos-x64": {
+          "url": "https://github.com/astral-sh/python-build-standalone/releases/download/20261124/cpython-3.14.10%2B20261124-x86_64-apple-darwin-install_only.tar.gz",
+          "sha256": "2a0d2817398655c545e0e1005f18b41c7909822a8638d8ccef03f10430cc220c",
+          "format": "tar.gz",
+          "strip": 1,
+          "bin_dir": "bin"
+        },
+        "macos-arm64": {
+          "url": "https://github.com/astral-sh/python-build-standalone/releases/download/20261124/cpython-3.14.10%2B20261124-aarch64-apple-darwin-install_only.tar.gz",
+          "sha256": "4fc4f7f83df874d623ae6aa700d6024a10bc7c401ef35df8b1117778616ec420",
+          "format": "tar.gz",
+          "strip": 1,
+          "bin_dir": "bin"
+        },
+        "windows-x64": {
+          "url": "https://github.com/astral-sh/python-build-standalone/releases/download/20261124/cpython-3.14.10%2B20261124-x86_64-pc-windows-msvc-install_only.tar.gz",
+          "sha256": "b062f2d8879a72b3d624697534aa8f736bf5eaf200ffbb1274602891a0e9e964",
+          "format": "tar.gz",
+          "strip": 1,
+          "bin_dir": ""
+        }
+      }
+    }
+  ],
+  "shims": {
+    "python": "bin/python3",
+    "python3": "bin/python3",
+    "pip": "bin/pip3",
+    "pip3": "bin/pip3"
+  },
+  "shims_windows": {
+    "python": "python.exe",
+    "python3": "python.exe",
+    "pip": "Scripts/pip.exe",
+    "pip3": "Scripts/pip.exe"
+  }
+}

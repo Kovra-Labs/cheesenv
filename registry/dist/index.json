@@ -1,7 +1,43 @@
 {
   "schema": 1,
-  "updated": "2026-11-24T08:22:20.604Z",
+  "updated": "2026-11-25T03:51:57.866Z",
   "modules": [
+    {
+      "name": "apache",
+      "category": "web-server",
+      "description": {
+        "en": "Apache HTTP Server with .htaccess and PHP-FPM support",
+        "id": "Apache HTTP Server dengan dukungan .htaccess dan PHP-FPM"
+      },
+      "latest": "2.4.71",
+      "manifest_sha256": "e37f8fceb6ac7553706e2e104c7c2ad9b13b23ace95f7fdcb8adbd1333f47b0d",
+      "license": "Apache-2.0",
+      "homepage": "https://httpd.apache.org"
+    },
+    {
+      "name": "mariadb",
+      "category": "database",
+      "description": {
+        "en": "MariaDB Community Server (LTS)",
+        "id": "MariaDB Community Server (LTS)"
+      },
+      "latest": "12.3.4",
+      "manifest_sha256": "60b5fe1425f599408073d996a140c91394a239dabad8ddf16bf757aff061dfe6",
+      "license": "GPL-2.0",
+      "homepage": "https://mariadb.org"
+    },
+    {
+      "name": "mongodb",
+      "category": "database",
+      "description": {
+        "en": "MongoDB Community Server with the mongosh shell",
+        "id": "MongoDB Community Server beserta shell mongosh"
+      },
+      "latest": "9.0.8",
+      "manifest_sha256": "ff2b26418d654ac849ac39f5bd8d65bf30e376b8cd75012f9a07279be68652e3",
+      "license": "SSPL-1.0",
+      "homepage": "https://www.mongodb.com"
+    },
     {
       "name": "mysql",
       "category": "database",
@@ -25,6 +61,18 @@
       "manifest_sha256": "ab6c535cd165b0c63899a3b47c78274a6ca9d0993f4267cec46105a88e8751d6",
       "license": "BSD-2-Clause",
       "homepage": "https://nginx.org"
+    },
+    {
+      "name": "node",
+      "category": "runtime",
+      "description": {
+        "en": "Node.js JavaScript runtime with npm (LTS)",
+        "id": "Runtime JavaScript Node.js beserta npm (LTS)"
+      },
+      "latest": "26.13.1",
+      "manifest_sha256": "d165a284b313b7382902764132aa092365a227bbc9c8fef101ca63832364aaf0",
+      "license": "MIT",
+      "homepage": "https://nodejs.org"
     },
     {
       "name": "pgadmin",
@@ -73,6 +121,30 @@
       "manifest_sha256": "0344a5b6e4a4ca4e76b621c3e60730243dfa877409b55429844804a2cf703864",
       "license": "PostgreSQL",
       "homepage": "https://www.postgresql.org"
+    },
+    {
+      "name": "python",
+      "category": "runtime",
+      "description": {
+        "en": "Python interpreter with pip (portable build)",
+        "id": "Interpreter Python beserta pip (build portable)"
+      },
+      "latest": "3.15.2",
+      "manifest_sha256": "98e967dc58959aa8ecd46305ee013294ad593d4333c017a2090fbd1ef8a13d5d",
+      "license": "PSF-2.0",
+      "homepage": "https://www.python.org"
+    },
+    {
+      "name": "redis",
+      "category": "database",
+      "description": {
+        "en": "Redis in-memory data store (cache, queues, sessions)",
+        "id": "Penyimpanan data in-memory Redis (cache, antrean, sesi)"
+      },
+      "latest": "8.10.3",
+      "manifest_sha256": "e2ef5c9e37644fce2ca3b59ae08aa0697c3f604322e62a38d53395ea357ca101",
+      "license": "AGPL-3.0",
+      "homepage": "https://redis.io"
     }
   ]
 }

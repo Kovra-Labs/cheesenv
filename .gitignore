@@ -1,5 +1,7 @@
 node_modules/
 dist/
+# The signed registry is published from git (see .github/workflows/registry.yml).
+!registry/dist/
 src-tauri/target/
 src-tauri/gen/
 *.log
