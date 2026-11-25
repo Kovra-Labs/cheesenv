@@ -5,24 +5,25 @@ name: Registry
 on:
   push:
     branches: [main]
-    paths: ['registry/dist/**']
+    paths: ['registry/dist/**', '.github/workflows/registry.yml']
   workflow_dispatch:
 
 permissions:
   contents: read
   pages: write
   id-token: write
+  actions: read
 
 concurrency:
   group: pages
   cancel-in-progress: false
 
+# Upload and deploy run in separate jobs (GitHub's Pages template): when
+# deploy-pages runs in the same job right after the upload, its artifact
+# lookup can come back empty ("No artifacts named github-pages were found").
 jobs:
-  deploy:
+  build:
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
       - name: Check registry files
@@ -31,5 +32,13 @@ jobs:
       - uses: actions/upload-pages-artifact@v5
         with:
           path: registry/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
       - id: deployment
         uses: actions/deploy-pages@v5
