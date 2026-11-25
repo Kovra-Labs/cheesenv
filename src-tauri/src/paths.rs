@@ -57,11 +57,15 @@ impl Layout {
     pub fn socket_dir(&self, name: &str, version: &str) -> PathBuf {
         use sha2::Digest;
         let hash = hex::encode(&sha2::Sha256::digest(self.root.to_string_lossy().as_bytes())[..4]);
+        // A long base would push socket paths past the limit again (macOS
+        // $TMPDIR is /var/folders/../T/, ~49 chars); ensure_socket_dir keeps
+        // the shared /tmp fallback safe.
+        let short = |p: &PathBuf| p.is_absolute() && p.is_dir() && p.as_os_str().len() <= 48;
         let base = std::env::var_os("XDG_RUNTIME_DIR")
             .map(PathBuf::from)
-            // A long runtime dir would push socket paths past the limit again.
-            .filter(|p| p.is_absolute() && p.is_dir() && p.as_os_str().len() <= 48)
-            .unwrap_or_else(std::env::temp_dir);
+            .filter(short)
+            .or_else(|| Some(std::env::temp_dir()).filter(short))
+            .unwrap_or_else(|| if cfg!(unix) { PathBuf::from("/tmp") } else { std::env::temp_dir() });
         base.join(format!("stackyard-{hash}")).join(format!("{name}-{version}"))
     }
 
@@ -202,7 +206,9 @@ mod tests {
         assert_ne!(a, b);
         std::env::set_var("XDG_RUNTIME_DIR", "/".to_string() + &"r".repeat(120));
         let c = Layout::new("/x".into()).socket_dir("postgresql", "18.7.0");
-        assert!(c.starts_with(std::env::temp_dir()), "long runtime dir falls back to temp");
+        let tmp_base = std::env::temp_dir();
+        let fallback = if tmp_base.as_os_str().len() <= 48 { tmp_base } else { PathBuf::from("/tmp") };
+        assert!(c.starts_with(fallback), "long runtime dir falls back to a short temp dir");
 
         let tmp = tempfile::tempdir().unwrap();
         let layout = Layout::new(tmp.path().join("root"));
