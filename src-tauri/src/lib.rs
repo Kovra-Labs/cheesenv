@@ -8,6 +8,7 @@ mod panel;
 mod paths;
 mod ports;
 mod registry;
+mod runtimes;
 mod secrets;
 mod settings;
 mod state;
@@ -29,6 +30,9 @@ use crate::supervisor::Supervisor;
 
 pub fn run() {
     tauri::Builder::default()
+        // Must be registered first: a second launch exits here and just brings
+        // the running instance (which may be hidden in the tray) to the front.
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| tray::show_main(app)))
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(updater::PendingUpdate::default())
@@ -90,6 +94,7 @@ pub fn run() {
             commands::registry_module,
             commands::install_module,
             commands::uninstall_module,
+            commands::set_runtime,
             commands::list_services,
             commands::start_service,
             commands::stop_service,
@@ -134,12 +139,8 @@ mod e2e {
     use crate::registry::Registry;
     use crate::supervisor::Status;
 
-    fn state(dir: &std::path::Path, url: &str) -> AppState {
-        let settings = Settings {
-            data_dir: dir.join("Stackyard"),
-            registry_url: url.into(),
-            ..Settings::default()
-        };
+    fn state(dir: &std::path::Path) -> AppState {
+        let settings = Settings { data_dir: dir.join("Stackyard"), ..Settings::default() };
         AppState {
             settings: RwLock::new(settings),
             settings_path: dir.join("settings.json"),
@@ -151,9 +152,9 @@ mod e2e {
     }
 
     async fn install(st: &AppState, name: &str) -> String {
-        let s = st.settings();
+        let url = std::env::var("STACKYARD_E2E_REGISTRY").expect("STACKYARD_E2E_REGISTRY");
         let layout = st.layout();
-        let reg = Registry { client: &st.client, base_url: &s.registry_url, layout: &layout };
+        let reg = Registry { client: &st.client, base_url: &url, layout: &layout };
         let idx = reg.index(true).await.expect("signed index");
         let entry = idx.index.modules.iter().find(|m| m.name == name).unwrap().clone();
         let manifest = reg.manifest(&entry).await.expect("manifest");
@@ -171,9 +172,11 @@ mod e2e {
     #[tokio::test]
     #[ignore]
     async fn install_start_serve_stop() {
-        let Ok(url) = std::env::var("STACKYARD_E2E_REGISTRY") else { return };
+        if std::env::var_os("STACKYARD_E2E_REGISTRY").is_none() {
+            return;
+        }
         let tmp = tempfile::tempdir().unwrap();
-        let st = state(tmp.path(), &url);
+        let st = state(tmp.path());
         st.layout().ensure().unwrap();
 
         let nginx = install(&st, "nginx").await;
@@ -213,6 +216,99 @@ mod e2e {
         }
     }
 
+    /// Node.js and Python: the default version's tools run through `<data>/bin`.
+    #[tokio::test]
+    #[ignore]
+    async fn runtimes_on_path() {
+        if std::env::var_os("STACKYARD_E2E_REGISTRY").is_none() {
+            return;
+        }
+        let tmp = tempfile::tempdir().unwrap();
+        let st = state(tmp.path());
+        st.layout().ensure().unwrap();
+        let bin = st.layout().shim_dir();
+        // Shims are found through PATH, like in a user's terminal (`npm` runs `node`).
+        let path = format!("{}:/usr/bin:/bin", bin.display());
+        let run = |cmd: &str, arg: &str| {
+            let out = std::process::Command::new(bin.join(cmd)).arg(arg).env("PATH", &path).output().unwrap();
+            assert!(out.status.success(), "{cmd} {arg}: {}", String::from_utf8_lossy(&out.stderr));
+            String::from_utf8_lossy(&out.stdout).trim().to_string()
+        };
+
+        for name in ["node", "python"] {
+            let id = install(&st, name).await;
+            let (n, v) = paths::parse_service_id(&id).unwrap();
+            let m = modules::load_installed(&st.layout(), &n, &v).unwrap();
+            runtimes::activate(&st.layout(), &m).unwrap();
+        }
+        assert!(run("node", "--version").starts_with('v'));
+        assert!(!run("npm", "--version").is_empty());
+        assert!(!run("npx", "--version").is_empty());
+        assert!(run("python", "--version").contains("Python 3"));
+        assert!(run("pip", "--version").contains("pip"));
+    }
+
+    /// MariaDB (generated root password), MongoDB, Redis and Apache.
+    #[tokio::test]
+    #[ignore]
+    async fn more_services() {
+        if std::env::var_os("STACKYARD_E2E_REGISTRY").is_none() {
+            return;
+        }
+        let tmp = tempfile::tempdir().unwrap();
+        let st = state(tmp.path());
+        st.layout().ensure().unwrap();
+        let layout = st.layout();
+        let ports = [("mariadb", 53307), ("mongodb", 57017), ("redis", 56379), ("apache", 58081)];
+        let mut ids = Vec::new();
+        for (name, port) in ports {
+            let id = install(&st, name).await;
+            st.update_settings(|s| s.set_service(&id, settings::ServiceSettings { port: Some(port), autostart: false }))
+                .unwrap();
+            let (n, v) = paths::parse_service_id(&id).unwrap();
+            let m = modules::load_installed(&layout, &n, &v).unwrap();
+            modules::write_configs(&layout, &m, Some(port), true).unwrap();
+            commands::start_service_inner(&st, &id).await.expect("init + start");
+            ids.push(id);
+        }
+        tokio::time::sleep(Duration::from_secs(5)).await;
+        for f in logs::list(&layout.logs()) {
+            let c = logs::read(&layout.logs(), &f.name, None).unwrap().content;
+            let tail: Vec<&str> = c.lines().rev().take(8).collect();
+            eprintln!("--- {} ---\n{}", f.name, tail.into_iter().rev().collect::<Vec<_>>().join("\n"));
+        }
+        let run = |id: &str, bin: &str, args: &[&str], env: &[(&str, &str)]| {
+            let (n, v) = paths::parse_service_id(id).unwrap();
+            let out = std::process::Command::new(layout.module_dir(&n, &v).join(bin)).args(args).envs(env.iter().copied()).output().unwrap();
+            (out.status.success(), String::from_utf8_lossy(&out.stdout).trim().to_string())
+        };
+
+        let (n, v) = paths::parse_service_id(&ids[0]).unwrap();
+        let pw = secrets::load(&layout, &n, &v).unwrap().0;
+        let maria = |password: &str| {
+            run(&ids[0], "bin/mariadb", &["--no-defaults", "-h127.0.0.1", "-P53307", "-uroot", "-Nse", "SELECT 41+1"], &[("MYSQL_PWD", password)])
+        };
+        assert_eq!(maria(&pw), (true, "42".into()), "mariadb login with generated password");
+        assert!(!maria("wrong").0, "mariadb rejects wrong password");
+        assert!(!maria("").0, "mariadb root has a password");
+
+        let mongo = run(&ids[1], "mongosh/bin/mongosh", &["--quiet", "mongodb://127.0.0.1:57017/test", "--eval", "db.runCommand({ping:1}).ok"], &[]);
+        assert_eq!(mongo, (true, "1".into()), "mongod answers");
+
+        assert_eq!(run(&ids[2], "bin/redis-cli", &["-p", "56379", "PING"], &[]), (true, "PONG".into()));
+
+        std::fs::write(layout.www().join("stackyard-e2e.html"), "served by apache").unwrap();
+        let body = reqwest::get("http://127.0.0.1:58081/stackyard-e2e.html").await.unwrap().text().await.unwrap();
+        assert_eq!(body, "served by apache");
+        let denied = reqwest::get("http://127.0.0.1:58081/.htaccess").await.unwrap().status();
+        assert!(denied == 403 || denied == 404, ".ht* files are not served");
+
+        st.supervisor.stop_all().await;
+        for (_, port) in ports {
+            assert!(ports::is_free(port), "port {port} released");
+        }
+    }
+
     fn client(st: &AppState, id: &str, bin: &str) -> std::path::PathBuf {
         let (n, v) = paths::parse_service_id(id).unwrap();
         st.layout().module_dir(&n, &v).join("bin").join(bin)
@@ -221,9 +317,11 @@ mod e2e {
     #[tokio::test]
     #[ignore]
     async fn databases_init_auth_restart() {
-        let Ok(url) = std::env::var("STACKYARD_E2E_REGISTRY") else { return };
+        if std::env::var_os("STACKYARD_E2E_REGISTRY").is_none() {
+            return;
+        }
         let tmp = tempfile::tempdir().unwrap();
-        let st = state(tmp.path(), &url);
+        let st = state(tmp.path());
         st.layout().ensure().unwrap();
 
         let mysql = install(&st, "mysql").await;
@@ -370,9 +468,11 @@ mod e2e {
     #[tokio::test]
     #[ignore]
     async fn panels_manage_databases() {
-        let Ok(url) = std::env::var("STACKYARD_E2E_REGISTRY") else { return };
+        if std::env::var_os("STACKYARD_E2E_REGISTRY").is_none() {
+            return;
+        }
         let tmp = tempfile::tempdir().unwrap();
-        let st = Arc::new(state(tmp.path(), &url));
+        let st = Arc::new(state(tmp.path()));
         st.layout().ensure().unwrap();
         // Always stop the services, even when an assertion fails.
         let result = tokio::spawn(panels_body(st.clone())).await;

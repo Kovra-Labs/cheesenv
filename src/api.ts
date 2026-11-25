@@ -7,18 +7,19 @@ export interface AppInfo {
   version: string;
   platform: string;
   data_dir: string;
+  /** Folder with the default runtimes' commands; users add it to PATH. */
+  bin_dir: string;
 }
 
 export interface Settings {
   language: 'id' | 'en';
   theme: 'system' | 'light' | 'dark';
   data_dir: string;
-  registry_url: string;
   auto_restart: boolean;
   check_updates: boolean;
 }
 
-export type SettingsUpdate = Partial<Pick<Settings, 'language' | 'theme' | 'data_dir' | 'registry_url' | 'auto_restart' | 'check_updates'>>;
+export type SettingsUpdate = Partial<Pick<Settings, 'language' | 'theme' | 'data_dir' | 'auto_restart' | 'check_updates'>>;
 
 export interface ModuleView {
   name: string;
@@ -42,6 +43,8 @@ export interface VersionView {
   version: string;
   available: boolean;
   installed: boolean;
+  /** Default version of a runtime (its commands are on PATH). */
+  default: boolean;
 }
 
 export interface ManifestView {
@@ -49,6 +52,8 @@ export interface ManifestView {
   category: string;
   has_service: boolean;
   default_port: number | null;
+  /** Node.js, Python, …: versions can be made the default on PATH. */
+  runtime: boolean;
   versions: VersionView[];
 }
 
@@ -150,6 +155,7 @@ export const api = {
   installModule: (name: string, version: string) => invoke<void>('install_module', { name, version }),
   uninstallModule: (name: string, version: string, deleteData: boolean) =>
     invoke<void>('uninstall_module', { name, version, deleteData }),
+  setRuntime: (name: string, version: string | null) => invoke<void>('set_runtime', { name, version }),
 
   listServices: () => invoke<ServiceInfo[]>('list_services'),
   startService: (id: string) => invoke<void>('start_service', { id }),

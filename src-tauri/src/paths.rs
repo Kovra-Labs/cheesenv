@@ -28,6 +28,10 @@ impl Layout {
     pub fn run_dir(&self, name: &str, version: &str) -> PathBuf {
         self.cache().join("run").join(name).join(version)
     }
+    /// Shims of the default runtime versions; users add this folder to PATH.
+    pub fn shim_dir(&self) -> PathBuf {
+        self.root.join("bin")
+    }
     pub fn www(&self) -> PathBuf {
         self.root.join("www")
     }

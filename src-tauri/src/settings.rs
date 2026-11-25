@@ -6,11 +6,6 @@ use serde::{Deserialize, Serialize};
 use crate::error::{AppError, AppResult};
 use crate::paths::{parse_service_id, write_atomic};
 
-/// Official registry index (GitHub Pages). Users may point this to a mirror.
-pub const DEFAULT_REGISTRY_URL: &str = "https://pipsyrs.github.io/stackyard";
-/// Former default that was never published; saved settings are moved off it.
-const LEGACY_REGISTRY_URL: &str = "https://stackyard.github.io/registry";
-
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
 #[serde(default)]
 pub struct ServiceSettings {
@@ -24,11 +19,12 @@ pub struct Settings {
     pub language: String,
     pub theme: String,
     pub data_dir: PathBuf,
-    pub registry_url: String,
     pub auto_restart: bool,
     /// Check GitHub Releases for a new app version at startup.
     pub check_updates: bool,
     pub services: BTreeMap<String, ServiceSettings>,
+    /// Default version per runtime module (e.g. `node` → `26.13.1`).
+    pub runtimes: BTreeMap<String, String>,
 }
 
 impl Default for Settings {
@@ -37,10 +33,10 @@ impl Default for Settings {
             language: "id".into(),
             theme: "system".into(),
             data_dir: default_data_dir(),
-            registry_url: DEFAULT_REGISTRY_URL.into(),
             auto_restart: true,
             check_updates: true,
             services: BTreeMap::new(),
+            runtimes: BTreeMap::new(),
         }
     }
 }
@@ -59,24 +55,19 @@ pub struct SettingsUpdate {
     pub language: Option<String>,
     pub theme: Option<String>,
     pub data_dir: Option<PathBuf>,
-    pub registry_url: Option<String>,
     pub auto_restart: Option<bool>,
     pub check_updates: Option<bool>,
 }
 
 impl Settings {
     pub fn load(path: &Path) -> Self {
-        let mut s: Self = match std::fs::read(path) {
+        match std::fs::read(path) {
             Ok(bytes) => serde_json::from_slice(&bytes).unwrap_or_else(|e| {
                 eprintln!("[stackyard] settings unreadable, using defaults: {e}");
                 Self::default()
             }),
             Err(_) => Self::default(),
-        };
-        if s.registry_url.trim_end_matches('/') == LEGACY_REGISTRY_URL {
-            s.registry_url = DEFAULT_REGISTRY_URL.into();
         }
-        s
     }
 
     pub fn save(&self, path: &Path) -> AppResult<()> {
@@ -104,11 +95,6 @@ impl Settings {
                 return Err(AppError::InvalidInput("data_dir".into()));
             }
             self.data_dir = dir;
-        }
-        if let Some(url) = u.registry_url {
-            let url = url.trim().trim_end_matches('/').to_string();
-            validate_remote_url(&url)?;
-            self.registry_url = url;
         }
         if let Some(v) = u.auto_restart {
             self.auto_restart = v;
@@ -156,7 +142,7 @@ mod tests {
 
     #[test]
     fn url_rules() {
-        assert!(validate_remote_url(DEFAULT_REGISTRY_URL).is_ok());
+        assert!(validate_remote_url(crate::registry::REGISTRY_URL).is_ok(), "built-in registry URL");
         assert!(validate_remote_url("http://127.0.0.1:8000").is_ok());
         assert!(validate_remote_url("http://localhost/reg").is_ok());
         assert!(validate_remote_url("http://example.com").is_err());
@@ -166,13 +152,14 @@ mod tests {
     }
 
     #[test]
-    fn legacy_registry_url_is_migrated() {
+    fn old_registry_url_setting_is_ignored() {
         let tmp = tempfile::tempdir().unwrap();
         let path = tmp.path().join("settings.json");
-        std::fs::write(&path, r#"{"registry_url":"https://stackyard.github.io/registry/"}"#).unwrap();
-        assert_eq!(Settings::load(&path).registry_url, DEFAULT_REGISTRY_URL);
-        std::fs::write(&path, r#"{"registry_url":"http://127.0.0.1:8765"}"#).unwrap();
-        assert_eq!(Settings::load(&path).registry_url, "http://127.0.0.1:8765", "custom URL kept");
+        std::fs::write(&path, r#"{"language":"en","registry_url":"https://evil.example"}"#).unwrap();
+        let s = Settings::load(&path);
+        assert_eq!(s.language, "en", "rest of the file still loads");
+        s.save(&path).unwrap();
+        assert!(!std::fs::read_to_string(&path).unwrap().contains("registry_url"));
     }
 
     #[test]
@@ -182,7 +169,6 @@ mod tests {
             language: Some("fr".into()),
             theme: None,
             data_dir: None,
-            registry_url: None,
             auto_restart: None,
             check_updates: None,
         };
@@ -191,7 +177,6 @@ mod tests {
             language: None,
             theme: None,
             data_dir: Some("relative".into()),
-            registry_url: None,
             auto_restart: None,
             check_updates: None,
         };

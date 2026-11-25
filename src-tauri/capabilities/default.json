@@ -13,6 +13,7 @@
     "allow-registry-module",
     "allow-install-module",
     "allow-uninstall-module",
+    "allow-set-runtime",
     "allow-list-services",
     "allow-start-service",
     "allow-stop-service",

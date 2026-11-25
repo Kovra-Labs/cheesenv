@@ -26,6 +26,9 @@ pub struct InstalledModule {
     pub config_templates: BTreeMap<String, String>,
     #[serde(default)]
     pub panel: Option<PanelSpec>,
+    /// Shims for this platform (see `ModuleManifest::shims`).
+    #[serde(default)]
+    pub shims: BTreeMap<String, String>,
     pub installed_at: u64,
 }
 
@@ -178,6 +181,7 @@ pub async fn install(
         service: manifest.service.clone(),
         config_templates: manifest.config_templates.clone(),
         panel: manifest.panel.clone(),
+        shims: manifest.platform_shims().clone(),
         installed_at: unix_now(),
     };
     let staging = layout
@@ -437,6 +441,7 @@ mod tests {
             service: None,
             config_templates: BTreeMap::from([("demo.conf".into(), "listen {{port}};\nroot {{www}};\n".into())]),
             panel: None,
+            shims: BTreeMap::new(),
             installed_at: 0,
         };
         let dir = layout.module_dir(&m.name, &m.version);

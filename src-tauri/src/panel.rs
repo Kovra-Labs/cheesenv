@@ -92,6 +92,7 @@ mod tests {
             service,
             config_templates: BTreeMap::new(),
             panel,
+            shims: BTreeMap::new(),
             installed_at: 0,
         }
     }
