@@ -1,7 +1,9 @@
 <script setup lang="ts">
+import logoUrl from './assets/logo.webp';
 import { ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { store, runningCount, dismissToast } from './store';
+import { fmtBytes } from './ui';
 import AppIcon, { type IconName } from './components/AppIcon.vue';
 
 const { t } = useI18n();
@@ -22,20 +24,7 @@ const resetScroll = () => main.value?.scrollTo({ top: 0 });
   <div class="shell">
     <aside class="side">
       <div class="brand">
-        <svg viewBox="0 0 512 512" aria-hidden="true">
-          <defs>
-            <linearGradient id="brand-g" x1="0" y1="0" x2="1" y2="1">
-              <stop offset="0" stop-color="#42a5f5" />
-              <stop offset="1" stop-color="#1976d2" />
-            </linearGradient>
-          </defs>
-          <rect width="512" height="512" rx="128" fill="url(#brand-g)" />
-          <g fill="none" stroke="#fff" stroke-width="34" stroke-linejoin="round">
-            <path d="M256 104 408 180 256 256 104 180Z" fill="#fff" />
-            <path d="M104 256l152 76 152-76" />
-            <path d="M104 332l152 76 152-76" />
-          </g>
-        </svg>
+        <img :src="logoUrl" alt="" width="38" height="38" />
         <div>
           <strong>Stackyard</strong>
           <span>{{ t('app.tagline') }}</span>
@@ -53,6 +42,15 @@ const resetScroll = () => main.value?.scrollTo({ top: 0 });
       </nav>
 
       <div class="side-foot">
+        <Transition name="fade">
+          <p v-if="store.panelSetup" class="setup hint" role="status">
+            <AppIcon name="download" :size="16" />
+            <span>
+              {{ t('app.panelSetup', { name: store.panelSetup.name }) }}
+              <span v-if="store.panelSetup.stage === 'download'" class="mono">{{ fmtBytes(store.panelSetup.downloaded) }}</span>
+            </span>
+          </p>
+        </Transition>
         <div class="status" :class="{ on: runningCount }">
           <span class="pulse" aria-hidden="true" />
           <span>{{ runningCount ? t('app.running', { n: runningCount }) : t('app.idle') }}</span>
@@ -111,7 +109,7 @@ const resetScroll = () => main.value?.scrollTo({ top: 0 });
   padding: 0 8px;
 }
 
-.brand svg {
+.brand img {
   width: 38px;
   height: 38px;
   flex: none;
@@ -255,6 +253,18 @@ const resetScroll = () => main.value?.scrollTo({ top: 0 });
     transform: scale(2.6);
     opacity: 0;
   }
+}
+
+.setup {
+  display: flex;
+  gap: 8px;
+  padding: 0 14px;
+  font-size: 12.5px;
+}
+
+.setup .icon {
+  flex: none;
+  margin-top: 2px;
 }
 
 .ver {

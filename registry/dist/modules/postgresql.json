@@ -7,6 +7,9 @@
     "en": "Advanced open source relational database",
     "id": "Database relasional open source yang andal"
   },
+  "companions": [
+    "pgadmin"
+  ],
   "versions": [
     {
       "version": "18.7.0",

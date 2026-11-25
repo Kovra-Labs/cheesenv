@@ -47,12 +47,12 @@ A cross-platform desktop app (Windows, macOS, Linux) for running a local develop
 | PostgreSQL | Database | 18, 17 | all platforms | theseus-rs/postgresql-binaries |
 | MongoDB | Database | 9.0, 8.0 (+ `mongosh`) | all platforms (Linux: glibc 2.35+, e.g. Ubuntu 22.04+) | mongodb.org |
 | Redis | Database | 8.10 | Windows; Linux & macOS (x64/arm64) once built by CI¹ | redis-windows (Windows), Stackyard build |
-| phpMyAdmin | Panel | 5.2 | all platforms (bundled static PHP CLI) | phpmyadmin.net + static-php-cli |
+| phpMyAdmin (for MySQL & MariaDB) | Panel | 5.2 | all platforms (bundled static PHP CLI) | phpmyadmin.net + static-php-cli |
 | pgAdmin 4 | Panel | 9.19 | Linux, macOS arm64, Windows (no macOS Intel: `cryptography` ships no wheel for it) | PyPI (hash-pinned) |
 
 ¹ Redis and Apache publish no official Linux/macOS binaries. The **Binaries** workflow builds them from the verified official source; see [Keeping modules up to date](#keeping-modules-up-to-date).
 
-Default ports (Linux/macOS add 8000 to ports below 1024): nginx 80 → 8080, Apache 81 → 8081, PHP-FPM 9000, MySQL 3306, MariaDB 3307, PostgreSQL 5432, MongoDB 27017, Redis 6379. Apache serves `~/Stackyard/www`, honours `.htaccess`, and passes `*.php` to PHP-FPM on port 9000. On Windows, Apache needs the [Visual C++ Redistributable](https://learn.microsoft.com/cpp/windows/latest-supported-vc-redist).
+Default ports (Linux/macOS add 8000 to ports below 1024): nginx 80 → 8080, Apache 82 → 8082, phpMyAdmin 8081, pgAdmin 5050, PHP-FPM 9000, MySQL 3306, MariaDB 3307, PostgreSQL 5432, MongoDB 27017, Redis 6379. Apache serves `~/Stackyard/www`, honours `.htaccess`, and passes `*.php` to PHP-FPM on port 9000. On Windows, Apache needs the [Visual C++ Redistributable](https://learn.microsoft.com/cpp/windows/latest-supported-vc-redist).
 
 MySQL, MariaDB, and PostgreSQL are initialised on first start; the root password is randomly generated and stored in the OS keychain (see **Credentials** on the Services page). MongoDB and Redis run without authentication, like their default installs, and only listen on `127.0.0.1`.
 
@@ -68,6 +68,8 @@ fish_add_path ~/Stackyard/bin                    # fish
 ```powershell
 [Environment]::SetEnvironmentVariable('Path', "$HOME\Stackyard\bin;" + [Environment]::GetEnvironmentVariable('Path', 'User'), 'User')
 ```
+
+**Web panels are built in.** phpMyAdmin (for MySQL & MariaDB) and pgAdmin (for PostgreSQL) are not listed in the Module Hub: Stackyard downloads them in the background when it starts (the sidebar shows the progress) and updates them to the newest registry version on every start, keeping their port and data. They appear inside the card of a database (open, stop, and change the panel port); **Open** is available while the database runs. Installing a database still installs its panel if the background download has not finished or failed.
 
 Once phpMyAdmin or pgAdmin is installed, a running database card shows an **Open phpmyadmin / Open pgadmin** button. The panel runs on `127.0.0.1`, its server list is filled in automatically from the installed database services (without passwords), and it opens in your browser. Log in with the user and password from **Credentials**. Installing pgAdmin pulls ~110 hash-pinned Python packages, so it needs internet access and takes a few minutes.
 
@@ -319,7 +321,8 @@ Additional manifest fields:
 - `module_files` — files rendered into the module folder at install time (relative paths).
 - `setup` — `files` + `commands` (`commands_windows`) run once at install time from inside the module folder (e.g. `pip install --require-hashes`). The module only counts as installed if setup succeeds.
 - `shims` / `shims_windows` — `{ "<command>": "<path inside the module>" }`: the module is a runtime whose default version exposes these commands in `~/Stackyard/bin`.
-- `panel` — `{ "for": "<module>", "path": "/..." }`: the module is a web panel for another module. Before each start, Stackyard writes `{{run}}/panel.json` (port, a random per-start token, and the target services without passwords); `path` may use `{{token}}`.
+- `companions` — `["<module>", …]`: installed along with this module when missing (e.g. `phpmyadmin` for `mysql`).
+- `panel` — `{ "for": ["<module>", …], "path": "/..." }`: the module is a web panel for another module. Before each start, Stackyard writes `{{run}}/panel.json` (port, a random per-start token, and the target services without passwords); `path` may use `{{token}}`.
 
 `registry/dist/` is committed, and the **Registry** workflow (`.github/workflows/registry.yml`) publishes it to GitHub Pages whenever that folder changes on `main` (default URL: `https://pipsyrs.github.io/stackyard`). One-time setup: **Settings → Pages → Source: GitHub Actions**. Signatures can be checked with `minisign -Vm index.json -p src-tauri/registry.pub`.
 
@@ -327,7 +330,7 @@ Users cannot change the registry URL; it is fixed at build time (default: the Gi
 
 ### Keeping modules up to date
 
-Modules do not update themselves: the registry is static and signed. `registry/upstream.mjs` refreshes the versions of Node.js, Python, MariaDB, MongoDB, Redis, and Apache from their official sources (two newest supported lines each; URLs and SHA-256 sums taken from the upstream checksum files):
+Modules do not update themselves: the registry is static and signed. `registry/upstream.mjs` refreshes the versions of Node.js, Python, MariaDB, MongoDB, Redis, Apache, phpMyAdmin, and pgAdmin from their official sources (two newest supported lines each, one for Apache/phpMyAdmin/pgAdmin; URLs and SHA-256 sums taken from the upstream checksum files). A new pgAdmin release also relocks its pip packages with `registry/pylock.py`, which needs `python3.12` (or set `PYTHON`):
 
 ```bash
 npm run registry:upstream check     # show what would change

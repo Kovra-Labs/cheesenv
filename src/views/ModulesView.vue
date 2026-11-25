@@ -27,16 +27,23 @@ const deleteData = ref(false);
 
 let unlisten: UnlistenFn | undefined;
 
-const modules = computed(() => index.value?.modules ?? []);
+/** The built-in panels (phpMyAdmin, pgAdmin) are installed and updated by the app, not from the hub. */
+const modules = computed(() => {
+  const all = index.value?.modules ?? [];
+  const panels = new Set(all.flatMap((m) => m.companions ?? []));
+  return all.filter((m) => !panels.has(m.name));
+});
 const categories = computed(() => ['all', ...new Set(modules.value.map((m) => m.category))]);
 const installedCount = computed(() => modules.value.filter((m) => m.installed.length).length);
 const filtered = computed(() => {
   const q = query.value.trim().toLowerCase();
+  const matches = (m: ModuleView) =>
+    m.name.includes(q) || describe(m).toLowerCase().includes(q) || (m.companions ?? []).some((c) => c.includes(q));
   return modules.value.filter(
     (m) =>
       (category.value === 'all' ||
         (category.value === INSTALLED ? m.installed.length > 0 : m.category === category.value)) &&
-      (!q || m.name.includes(q) || describe(m).toLowerCase().includes(q)),
+      (!q || matches(m)),
   );
 });
 
@@ -93,9 +100,16 @@ async function install(name: string, version: string) {
   const k = key(name, version);
   pending.add(k);
   try {
-    await api.installModule(name, version);
-    toast(t('modules.installedOk', { name, version }));
+    const outcome = await api.installModule(name, version);
+    toast(
+      outcome.companions.length
+        ? t('modules.installedWith', { name, version, companions: outcome.companions.join(', ') })
+        : t('modules.installedOk', { name, version }),
+    );
+    for (const err of outcome.companion_errors) toast(t('modules.companionFailed', { error: err }), 'error');
     await refreshModule(name);
+    // Companions changed too: refresh their open version lists.
+    for (const c of outcome.companions) if (manifests[c]) await attempt(() => refreshModule(c));
   } catch (e) {
     toast(errorText(e), 'error');
   } finally {
@@ -217,6 +231,10 @@ onUnmounted(() => unlisten?.());
           <span v-else-if="m.installed.length" class="badge ok"><AppIcon name="check" :size="14" />{{ t('modules.isInstalled') }}</span>
         </div>
         <p class="desc">{{ describe(m) }}</p>
+        <p v-for="c in m.companions ?? []" :key="c" class="companion">
+          <AppIcon name="external" :size="16" />
+          <span><b>{{ t('modules.includes', { name: c }) }}</b> · {{ t('modules.builtIn') }}</span>
+        </p>
         <div class="meta">
           <span class="badge info mono">{{ t('modules.latest', { v: m.latest }) }}</span>
           <span v-if="m.installed.length" class="badge mono">{{ t('modules.installed', { v: m.installed.join(', ') }) }}</span>
@@ -433,6 +451,21 @@ onUnmounted(() => unlisten?.());
 .v-name {
   font-size: 14px;
   font-weight: 600;
+}
+
+.companion {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  color: var(--ink-2);
+  font-size: 13.5px;
+}
+
+.companion b {
+  color: var(--ink);
 }
 
 .runtime-hint {

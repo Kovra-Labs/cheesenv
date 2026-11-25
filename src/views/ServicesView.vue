@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { store } from '../store';
+import { cardServices, store } from '../store';
 import AppIcon from '../components/AppIcon.vue';
 import ServiceCard from '../components/ServiceCard.vue';
 
@@ -11,11 +11,11 @@ const { t } = useI18n();
 const filter = ref<Filter>('all');
 const isRunning = (status: string) => status !== 'stopped' && status !== 'crashed';
 const counts = computed(() => {
-  const running = store.services.filter((s) => isRunning(s.status)).length;
-  return { all: store.services.length, running, stopped: store.services.length - running };
+  const running = cardServices.value.filter((s) => isRunning(s.status)).length;
+  return { all: cardServices.value.length, running, stopped: cardServices.value.length - running };
 });
 const shown = computed(() =>
-  store.services.filter((s) => filter.value === 'all' || (filter.value === 'running') === isRunning(s.status)),
+  cardServices.value.filter((s) => filter.value === 'all' || (filter.value === 'running') === isRunning(s.status)),
 );
 </script>
 

@@ -1,5 +1,6 @@
 export default {
   app: {
+    panelSetup: 'Menyiapkan {name}…',
     tagline: 'Dev stack lokal',
     menu: 'Menu utama',
     running: '{n} service berjalan',
@@ -96,6 +97,9 @@ export default {
     notInitialized: 'Jalankan service sekali untuk membuat database dan password.',
     openPanel: 'Buka {name}',
     panelStarting: 'Membuka panel…',
+    panelNeedsHost: 'Jalankan {name} dulu untuk membuka panel.',
+    stopPanel: 'Hentikan {name}',
+    stopPanelFirst: 'Hentikan panel dulu untuk mengganti port.',
     panelHint: 'Panel otomatis berisi semua service {target} yang terpasang. Login memakai user & password dari Kredensial. Restart panel setelah memasang versi {target} baru.',
     storedKeychain: 'Password disimpan di keychain sistem.',
     storedFile: 'Keychain sistem tidak tersedia; password disimpan di file yang hanya bisa dibaca akun kamu.',
@@ -114,6 +118,10 @@ export default {
     downloading: 'Mengunduh {p}',
     settingUp: 'Menyiapkan paket (bisa beberapa menit)…',
     installedOk: '{name} {version} berhasil dipasang.',
+    installedWith: '{name} {version} berhasil dipasang beserta {companions}.',
+    companionFailed: 'Panel pendamping gagal dipasang ({error}). Bisa dipasang manual dari Pusat Module.',
+    includes: 'Termasuk {name}',
+    builtIn: 'bawaan aplikasi, diperbarui otomatis',
     uninstalledOk: '{name} {version} dihapus.',
     confirmUninstall: 'Hapus {name} {version}?',
     deleteData: 'Hapus juga data (database, dsb.) — tidak bisa dibatalkan',

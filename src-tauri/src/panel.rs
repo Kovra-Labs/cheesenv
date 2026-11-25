@@ -19,6 +19,9 @@ const PANEL_FILE: &str = "panel.json";
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PanelTarget {
+    /// Module name (e.g. `mysql` or `mariadb`), so the panel can label servers.
+    #[serde(default)]
+    pub name: String,
     pub version: String,
     pub host: String,
     pub port: u16,
@@ -41,10 +44,11 @@ pub fn targets(
     let Some(panel) = &m.panel else { return Vec::new() };
     installed
         .iter()
-        .filter(|t| t.name == panel.target)
+        .filter(|t| panel.targets.contains(&t.name))
         .filter_map(|t| {
             let spec = t.service.as_ref()?;
             Some(PanelTarget {
+                name: t.name.clone(),
                 version: t.version.clone(),
                 host: "127.0.0.1".into(),
                 port: port_for(&service_id(&t.name, &t.version), spec)?,
@@ -113,7 +117,7 @@ mod tests {
             "pgadmin",
             "9.19",
             Some(spec(5050, None)),
-            Some(PanelSpec { target: "postgresql".into(), path: "/?key={{token}}".into() }),
+            Some(PanelSpec { targets: vec!["postgresql".into()], path: "/?key={{token}}".into() }),
         );
         let installed = vec![
             module("postgresql", "18.7.0", Some(spec(5432, Some("postgres"))), None),
@@ -143,5 +147,28 @@ mod tests {
             let mode = std::fs::metadata(layout.run_dir("pgadmin", "9.19").join(PANEL_FILE)).unwrap().permissions().mode();
             assert_eq!(mode & 0o777, 0o600);
         }
+    }
+
+    #[test]
+    fn panel_for_several_modules() {
+        // Installed modules written by older versions store a single name.
+        let old: PanelSpec = serde_json::from_str(r#"{"for":"mysql","path":"/"}"#).unwrap();
+        assert_eq!(old.targets, ["mysql"]);
+        let panel = module(
+            "phpmyadmin",
+            "5.2.3",
+            Some(spec(8081, None)),
+            Some(serde_json::from_str(r#"{"for":["mysql","mariadb"],"path":"/"}"#).unwrap()),
+        );
+        let installed = vec![
+            module("mysql", "8.4.11", Some(spec(3306, Some("root"))), None),
+            module("mariadb", "12.3.4", Some(spec(3307, Some("root"))), None),
+            module("postgresql", "18.7.0", Some(spec(5432, Some("postgres"))), None),
+        ];
+        let t = targets(&panel, &installed, |_, s| s.default_port);
+        assert_eq!(
+            t.iter().map(|t| (t.name.as_str(), t.port)).collect::<Vec<_>>(),
+            [("mysql", 3306), ("mariadb", 3307)]
+        );
     }
 }

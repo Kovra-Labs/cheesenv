@@ -7,6 +7,9 @@
     "en": "MariaDB Community Server (LTS)",
     "id": "MariaDB Community Server (LTS)"
   },
+  "companions": [
+    "phpmyadmin"
+  ],
   "versions": [
     {
       "version": "12.3.4",

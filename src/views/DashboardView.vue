@@ -2,14 +2,14 @@
 import { computed, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { api } from '../api';
-import { attempt, errorText, runningCount, store, toast } from '../store';
+import { attempt, cardServices, errorText, runningCount, store, toast } from '../store';
 import AppIcon, { type IconName } from '../components/AppIcon.vue';
 import ServiceCard from '../components/ServiceCard.vue';
 
 const { t } = useI18n();
 const busy = ref<'start' | 'stop' | null>(null);
 const crashed = computed(() => store.services.filter((s) => s.status === 'crashed').length);
-const installed = computed(() => store.services.length);
+const installed = computed(() => cardServices.value.length);
 
 const stats = computed<{ key: string; n: number; icon: IconName; tone: string }[]>(() => [
   { key: 'running', n: runningCount.value, icon: 'activity', tone: 'ok' },
@@ -92,7 +92,7 @@ async function stopAll() {
         </RouterLink>
       </div>
       <TransitionGroup v-if="store.services.length" tag="div" name="list" class="cards">
-        <ServiceCard v-for="s in store.services" :key="s.id" :service="s" />
+        <ServiceCard v-for="s in cardServices" :key="s.id" :service="s" />
       </TransitionGroup>
       <div v-else class="card empty">
         <span class="empty-icon"><AppIcon name="box" :size="30" /></span>

@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "updated": "2026-11-25T03:51:57.866Z",
+  "updated": "2026-11-25T06:39:20.757Z",
   "modules": [
     {
       "name": "apache",
@@ -10,7 +10,7 @@
         "id": "Apache HTTP Server dengan dukungan .htaccess dan PHP-FPM"
       },
       "latest": "2.4.71",
-      "manifest_sha256": "e37f8fceb6ac7553706e2e104c7c2ad9b13b23ace95f7fdcb8adbd1333f47b0d",
+      "manifest_sha256": "53dadef65fe11b10a2b34f68c1aa8bedadc210a47d2e415ebedec24c64b4d332",
       "license": "Apache-2.0",
       "homepage": "https://httpd.apache.org"
     },
@@ -22,9 +22,12 @@
         "id": "MariaDB Community Server (LTS)"
       },
       "latest": "12.3.4",
-      "manifest_sha256": "60b5fe1425f599408073d996a140c91394a239dabad8ddf16bf757aff061dfe6",
+      "manifest_sha256": "2ecdad29204c7a65eaa26d89135b2791c2d4152c58c281bba4300ed78d5cfb70",
       "license": "GPL-2.0",
-      "homepage": "https://mariadb.org"
+      "homepage": "https://mariadb.org",
+      "companions": [
+        "phpmyadmin"
+      ]
     },
     {
       "name": "mongodb",
@@ -46,9 +49,12 @@
         "id": "MySQL Community Server (LTS)"
       },
       "latest": "8.4.11",
-      "manifest_sha256": "9a57e8f9435ddf86c92bf9f15189453dc4d4657e9febf83b99d3da51ce1fd65f",
+      "manifest_sha256": "2de3772d8c941696d8f36378b5fd8f07f30075a74cd7b8abad316fa69ee3f966",
       "license": "GPL-2.0",
-      "homepage": "https://www.mysql.com"
+      "homepage": "https://www.mysql.com",
+      "companions": [
+        "phpmyadmin"
+      ]
     },
     {
       "name": "nginx",
@@ -102,11 +108,11 @@
       "name": "phpmyadmin",
       "category": "tools",
       "description": {
-        "en": "Web panel for managing MySQL databases",
-        "id": "Panel web untuk mengelola database MySQL"
+        "en": "Web panel for managing MySQL and MariaDB databases",
+        "id": "Panel web untuk mengelola database MySQL dan MariaDB"
       },
       "latest": "5.2.3",
-      "manifest_sha256": "3a646ab064d28ac2d4e86179db21ef02e241118b67e8c9051acea878c4c297ca",
+      "manifest_sha256": "3d1597d79f79e9e2eafed52e1d86f8504369bdb8609708c11cc992beef9ba002",
       "license": "GPL-2.0",
       "homepage": "https://www.phpmyadmin.net"
     },
@@ -118,9 +124,12 @@
         "id": "Database relasional open source yang andal"
       },
       "latest": "18.7.0",
-      "manifest_sha256": "0344a5b6e4a4ca4e76b621c3e60730243dfa877409b55429844804a2cf703864",
+      "manifest_sha256": "0e3fda2f8641092e76fea72000c5beda62ace72f8d9fc640188a98718b7f39c1",
       "license": "PostgreSQL",
-      "homepage": "https://www.postgresql.org"
+      "homepage": "https://www.postgresql.org",
+      "companions": [
+        "pgadmin"
+      ]
     },
     {
       "name": "python",

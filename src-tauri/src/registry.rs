@@ -35,6 +35,9 @@ pub struct IndexEntry {
     pub license: String,
     #[serde(default)]
     pub homepage: String,
+    /// Copied from the manifest so the hub can group panels with their databases.
+    #[serde(default)]
+    pub companions: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -62,6 +65,10 @@ pub struct ModuleManifest {
     pub shims: BTreeMap<String, String>,
     #[serde(default)]
     pub shims_windows: Option<BTreeMap<String, String>>,
+    /// Modules installed along with this one when missing (e.g. phpMyAdmin
+    /// for MySQL). They stay separate modules with their own versions.
+    #[serde(default)]
+    pub companions: Vec<String>,
 }
 
 impl ModuleManifest {
@@ -77,9 +84,10 @@ impl ModuleManifest {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PanelSpec {
-    /// Module whose services the panel manages.
-    #[serde(rename = "for")]
-    pub target: String,
+    /// Modules whose services the panel manages. A single name is accepted
+    /// too (older manifests and installed modules).
+    #[serde(rename = "for", deserialize_with = "one_or_many")]
+    pub targets: Vec<String>,
     /// URL path opened in the browser; may contain `{{token}}`.
     pub path: String,
 }
@@ -149,6 +157,19 @@ pub struct InitSpec {
     pub commands_windows: Option<Vec<Vec<String>>>,
 }
 
+fn one_or_many<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Vec<String>, D::Error> {
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum OneOrMany {
+        One(String),
+        Many(Vec<String>),
+    }
+    Ok(match OneOrMany::deserialize(d)? {
+        OneOrMany::One(s) => vec![s],
+        OneOrMany::Many(v) => v,
+    })
+}
+
 impl InitSpec {
     pub fn commands(&self) -> &[Vec<String>] {
         if cfg!(windows) {
@@ -208,6 +229,9 @@ fn validate_index(index: &RegistryIndex) -> AppResult<()> {
     for m in &index.modules {
         validate_name(&m.name)?;
         validate_version(&m.latest)?;
+        for c in &m.companions {
+            validate_name(c)?;
+        }
     }
     Ok(())
 }
@@ -260,8 +284,19 @@ fn validate_manifest(m: &ModuleManifest, expected_name: &str) -> AppResult<()> {
     if commands.clone().any(|c| c.is_empty()) {
         return Err(AppError::InvalidInput("empty command".into()));
     }
+    for companion in &m.companions {
+        validate_name(companion)?;
+        if *companion == m.name {
+            return Err(AppError::InvalidInput("companion".into()));
+        }
+    }
     if let Some(panel) = &m.panel {
-        validate_name(&panel.target)?;
+        if panel.targets.is_empty() {
+            return Err(AppError::InvalidInput("panel target".into()));
+        }
+        for target in &panel.targets {
+            validate_name(target)?;
+        }
         if !panel.path.starts_with('/') || panel.path.chars().any(|c| c.is_whitespace() || c == '\\') {
             return Err(AppError::InvalidInput("panel path".into()));
         }
@@ -495,6 +530,12 @@ mod tests {
         assert!(check(r#""panel":{"for":"mysql","path":"/"}"#).is_ok());
         assert!(check(r#""panel":{"for":"mysql","path":"http://evil"}"#).is_err());
         assert!(check(r#""panel":{"for":"../x","path":"/"}"#).is_err());
+        assert!(check(r#""panel":{"for":["mysql","mariadb"],"path":"/"}"#).is_ok());
+        assert!(check(r#""panel":{"for":["mysql","../x"],"path":"/"}"#).is_err());
+        assert!(check(r#""panel":{"for":[],"path":"/"}"#).is_err());
+        assert!(check(r#""companions":["phpmyadmin"]"#).is_ok());
+        assert!(check(r#""companions":["../x"]"#).is_err());
+        assert!(check(r#""companions":["p"]"#).is_err(), "a module is not its own companion");
         assert!(check(r#""module_files":{"app/a.php":""}"#).is_ok());
         assert!(check(r#""module_files":{"../a.php":""}"#).is_err());
         assert!(check(r#""module_files":{"/etc/a":""}"#).is_err());

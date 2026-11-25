@@ -2,13 +2,16 @@
 // Refreshes module versions from their official upstream sources.
 //   check                    show what would change
 //   update [--only a,b]      rewrite registry/modules/*.json (versions only)
-// Every module keeps its two newest supported release lines. URLs and SHA-256
+// Every module keeps its two newest supported release lines (one for Apache,
+// phpMyAdmin and pgAdmin, which maintain a single line). URLs and SHA-256
 // sums come from the upstream checksum files, never from hashing a download.
 // Redis and Apache have no official Linux/macOS binaries: those are built by
 // .github/workflows/binaries.yml into GitHub releases `<module>-<version>`;
 // versions whose build is missing are listed under "builds".
 // Signing stays local: run `npm run registry build` after merging.
+import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
+import net from 'node:net';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -16,13 +19,24 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const modulesDir = path.join(here, 'modules');
 const BINARIES_REPO = process.env.STACKYARD_BINARIES_REPO ?? 'pipsyrs/stackyard';
 const LINES = 2;
+// Node's default 250 ms per address is too short for some CDNs on slow links.
+net.setDefaultAutoSelectFamilyAttemptTimeout(2000);
 
 const headers = (url) =>
   url.startsWith('https://api.github.com/') && process.env.GITHUB_TOKEN
     ? { authorization: `Bearer ${process.env.GITHUB_TOKEN}`, 'x-github-api-version': '2022-11-28' }
     : {};
 async function get(url, { allow404 = false } = {}) {
-  const res = await fetch(url, { headers: headers(url) });
+  let res;
+  for (let attempt = 1; !res; attempt++) {
+    try {
+      res = await fetch(url, { headers: headers(url) });
+    } catch (e) {
+      // Transient network errors: two retries, then name the URL and cause.
+      if (attempt === 3) throw new Error(`${url}: ${e.cause?.code ?? e.cause?.message ?? e.message}`);
+      await new Promise((r) => setTimeout(r, 2000 * attempt));
+    }
+  }
   if (allow404 && res.status === 404) return null;
   if (!res.ok) throw new Error(`${url}: HTTP ${res.status}`);
   return res;
@@ -222,6 +236,48 @@ const sources = {
   },
 };
 
+Object.assign(sources, {
+  /** phpMyAdmin itself is updated; the bundled static PHP CLI stays as pinned. */
+  async phpmyadmin(manifest) {
+    const { releases } = await json('https://www.phpmyadmin.net/home_page/version.json');
+    const v = newestPerLine(releases.map((r) => r.version).filter(isStable), major, 1)[0];
+    const zip = `https://files.phpmyadmin.net/phpMyAdmin/${v}/phpMyAdmin-${v}-all-languages.zip`;
+    const sha = (await text(`${zip}.sha256`)).trim().split(/\s+/)[0];
+    if (!/^[0-9a-f]{64}$/.test(sha)) throw new Error(`bad checksum file for phpMyAdmin ${v}`);
+    const assets = {};
+    for (const [key, a] of Object.entries(newest(manifest).assets)) {
+      assets[key] = { ...a, extra: a.extra.map((x) => (x.dest === 'app' ? { ...x, url: zip, sha256: sha } : x)) };
+    }
+    return { versions: [{ version: v, assets }] };
+  },
+
+  /** pgAdmin 4 from PyPI on Python 3.12; a new pgAdmin also relocks its pip packages. */
+  async pgadmin(manifest) {
+    const { info } = await json('https://pypi.org/pypi/pgadmin4/json');
+    const repo = 'astral-sh/python-build-standalone';
+    const { tag_name: tag } = await json(`https://api.github.com/repos/${repo}/releases/latest`);
+    const base = `https://github.com/${repo}/releases/download/${tag}/`;
+    const sums = sumFile(await text(base + 'SHA256SUMS'));
+    const py = newestPerLine(
+      [...sums.keys()].map((f) => f.match(/^cpython-(3\.12\.\d+)\+\d+-x86_64-unknown-linux-gnu-install_only\.tar\.gz$/)?.[1]).filter(Boolean),
+      minor,
+      1,
+    )[0];
+    if (!py) throw new Error(`no Python 3.12 build in ${tag}`);
+    const assets = {};
+    // Same platforms as now (no macOS Intel: `cryptography` ships no wheel for it).
+    for (const [key, a] of Object.entries(newest(manifest).assets)) {
+      const triple = a.url.match(/-(\w+-\w+-\w+(?:-\w+)?)-install_only\.tar\.gz$/)[1];
+      const file = `cpython-${py}+${tag}-${triple}-install_only.tar.gz`;
+      if (sums.has(file)) assets[key] = { ...a, url: base + file.replace('+', '%2B'), sha256: sums.get(file) };
+    }
+    const relock = info.version !== newest(manifest).version;
+    return { versions: [{ version: info.version, assets }], relock: relock && [`pgadmin4==${info.version}`, '--python', '3.12'] };
+  },
+});
+
+const newest = (manifest) => [...manifest.versions].sort((a, b) => cmp(b.version, a.version))[0];
+
 /** mongosh shell (bundled into the MongoDB module as `mongosh/`). */
 async function mongosh() {
   const rel = await json('https://api.github.com/repos/mongodb-js/mongosh/releases/latest');
@@ -254,6 +310,16 @@ async function builtAssets(name, v, builds) {
   return assets;
 }
 
+/** Regenerates hash-pinned pip requirements (registry/pylock.py); restores the manifest on failure. */
+function relock(name, args, file, before) {
+  const python = process.env.PYTHON ?? 'python3.12'; // pylock.py must run on the module's Python
+  const r = spawnSync(python, [path.join(here, 'pylock.py'), ...args, '--module', name], { stdio: 'inherit' });
+  if (r.status !== 0) {
+    fs.writeFileSync(file, before);
+    throw new Error(`pylock failed (${python}); manifest left unchanged`);
+  }
+}
+
 const ORDER = ['linux-x64', 'linux-arm64', 'macos-x64', 'macos-arm64', 'windows-x64'];
 const sortAssets = (assets) => Object.fromEntries(ORDER.filter((k) => assets[k]).map((k) => [k, assets[k]]));
 
@@ -268,7 +334,7 @@ async function run(write) {
     const file = path.join(modulesDir, `${name}.json`);
     const manifest = JSON.parse(fs.readFileSync(file, 'utf8'));
     try {
-      const res = await sources[name]();
+      const res = await sources[name](manifest);
       builds.push(...(res.builds ?? []));
       const versions = res.versions
         .map((v) => ({ version: v.version, assets: sortAssets(v.assets) }))
@@ -282,7 +348,11 @@ async function run(write) {
       changed.push(name);
       const after = versions.map((v) => `${v.version} [${Object.keys(v.assets).join(' ')}]`).join(', ');
       console.log(`${name}: ${before} -> ${after}`);
-      if (write) fs.writeFileSync(file, JSON.stringify({ ...manifest, versions }, null, 2) + '\n');
+      if (write) {
+        const before = fs.readFileSync(file);
+        fs.writeFileSync(file, JSON.stringify({ ...manifest, versions }, null, 2) + '\n');
+        if (res.relock) relock(name, res.relock, file, before);
+      }
     } catch (e) {
       errors.push(name);
       console.error(`${name}: ${e.message}`);

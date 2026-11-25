@@ -8,6 +8,7 @@ import AppIcon from './AppIcon.vue';
 import StatusBadge from './StatusBadge.vue';
 import CredentialsPanel from './CredentialsPanel.vue';
 import CollapseTransition from './CollapseTransition.vue';
+import PanelRow from './PanelRow.vue';
 
 const props = defineProps<{ service: ServiceInfo; detailed?: boolean }>();
 const { t } = useI18n();
@@ -22,17 +23,7 @@ watch(
 );
 
 /** Installed web panels (phpMyAdmin, pgAdmin) that manage this service's module. */
-const panels = computed(() => store.services.filter((s) => s.panel_for === props.service.name));
-const openingPanel = ref<string | null>(null);
-
-async function openPanel(id: string) {
-  openingPanel.value = id;
-  try {
-    await attempt(() => api.openPanel(id));
-  } finally {
-    openingPanel.value = null;
-  }
-}
+const panels = computed(() => store.services.filter((s) => s.panel_for.includes(props.service.name)));
 
 const active = computed(() => props.service.status !== 'stopped' && props.service.status !== 'crashed');
 const running = computed(() => props.service.status === 'running');
@@ -66,6 +57,7 @@ function start() {
 const stop = () => run(() => attempt(() => api.stopService(props.service.id)));
 const restart = () => run(() => attempt(() => api.restartService(props.service.id)));
 const open = () => attempt(() => api.openServiceUrl(props.service.id));
+const openSelf = () => attempt(() => api.openPanel(props.service.id));
 const openConfig = () => attempt(() => api.openFolder('config', props.service.id));
 
 async function savePort(port: number | null) {
@@ -117,15 +109,8 @@ const setAutostart = (v: boolean) => attempt(() => api.setServiceOptions(props.s
         <button v-if="running && service.category === 'web-server'" class="btn" @click="open">
           <AppIcon name="external" />{{ t('services.openBrowser') }}
         </button>
-        <template v-if="running">
-          <button v-for="p in panels" :key="p.id" class="btn" :disabled="openingPanel !== null" @click="openPanel(p.id)">
-            <AppIcon :name="openingPanel === p.id ? 'restart' : 'external'" :class="{ spin: openingPanel === p.id }" />
-            {{ openingPanel === p.id ? t('services.panelStarting') : t('services.openPanel', { name: p.name }) }}
-          </button>
-        </template>
-        <button v-if="service.panel_for && running" class="btn" :disabled="openingPanel !== null" @click="openPanel(service.id)">
-          <AppIcon :name="openingPanel === service.id ? 'restart' : 'external'" :class="{ spin: openingPanel === service.id }" />
-          {{ openingPanel === service.id ? t('services.panelStarting') : t('services.openPanel', { name: service.name }) }}
+        <button v-if="service.panel_for.length && running" class="btn" @click="openSelf">
+          <AppIcon name="external" />{{ t('services.openPanel', { name: service.name }) }}
         </button>
         <button
           v-if="service.credentials_user"
@@ -160,7 +145,13 @@ const setAutostart = (v: boolean) => attempt(() => api.setServiceOptions(props.s
     <p v-if="!service.initialized && !active" class="alert info">
       <AppIcon name="info" />{{ t('services.firstStart') }}
     </p>
-    <p v-if="detailed && service.panel_for" class="hint">{{ t('services.panelHint', { target: service.panel_for }) }}</p>
+    <p v-if="detailed && service.panel_for.length" class="hint">
+      {{ t('services.panelHint', { target: service.panel_for.join(' / ') }) }}
+    </p>
+
+    <div v-if="panels.length" class="panels">
+      <PanelRow v-for="p in panels" :key="p.id" :panel="p" :host="service" :detailed="detailed" />
+    </div>
 
     <CollapseTransition>
       <div v-if="showCreds && service.credentials_user">
@@ -316,6 +307,11 @@ const setAutostart = (v: boolean) => attempt(() => api.setServiceOptions(props.s
 
 .auto {
   min-height: 42px;
+}
+
+.panels {
+  display: grid;
+  gap: 8px;
 }
 
 .svc-detail > .btn {

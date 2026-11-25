@@ -2,6 +2,7 @@ import type id from './id';
 
 const en: typeof id = {
   app: {
+    panelSetup: 'Setting up {name}…',
     tagline: 'Local dev stack',
     menu: 'Main menu',
     running: '{n} services running',
@@ -98,6 +99,9 @@ const en: typeof id = {
     notInitialized: 'Start the service once to create the database and password.',
     openPanel: 'Open {name}',
     panelStarting: 'Opening panel…',
+    panelNeedsHost: 'Start {name} first to open the panel.',
+    stopPanel: 'Stop {name}',
+    stopPanelFirst: 'Stop the panel first to change its port.',
     panelHint: 'The panel lists every installed {target} service. Log in with the user & password from Credentials. Restart the panel after installing a new {target} version.',
     storedKeychain: 'Password is stored in the system keychain.',
     storedFile: 'System keychain unavailable; password is stored in a file only your account can read.',
@@ -116,6 +120,10 @@ const en: typeof id = {
     settingUp: 'Setting up packages (may take a few minutes)…',
     downloading: 'Downloading {p}',
     installedOk: '{name} {version} installed.',
+    installedWith: '{name} {version} installed together with {companions}.',
+    companionFailed: 'The companion panel could not be installed ({error}). You can install it from the Module Hub.',
+    includes: 'Includes {name}',
+    builtIn: 'built in, updated automatically',
     uninstalledOk: '{name} {version} removed.',
     confirmUninstall: 'Uninstall {name} {version}?',
     deleteData: 'Also delete data (databases, etc.) — cannot be undone',
