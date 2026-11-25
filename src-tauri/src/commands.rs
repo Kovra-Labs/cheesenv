@@ -581,8 +581,36 @@ pub async fn start_service(state: State<'_, AppState>, id: String) -> Cmd<()> {
 
 #[tauri::command]
 pub async fn stop_service(state: State<'_, AppState>, id: String) -> Cmd<()> {
-    parse_service_id(&id)?;
-    state.supervisor.stop(&id).await
+    stop_service_inner(&state, &id).await
+}
+
+pub(crate) async fn stop_service_inner(state: &AppState, id: &str) -> AppResult<()> {
+    parse_service_id(id)?;
+    state.supervisor.stop(id).await?;
+    stop_idle_panels(state).await;
+    Ok(())
+}
+
+/// A web panel only runs alongside its databases: one left without any
+/// running database (e.g. phpMyAdmin once MySQL and MariaDB are stopped) stops too.
+async fn stop_idle_panels(state: &AppState) {
+    let installed = modules::list_installed(&state.layout());
+    for p in &installed {
+        let Some(panel) = &p.panel else { continue };
+        let id = service_id(&p.name, &p.version);
+        if !state.supervisor.is_active(&id).await {
+            continue;
+        }
+        let mut serving = false;
+        for m in installed.iter().filter(|m| panel.targets.contains(&m.name)) {
+            serving |= state.supervisor.is_active(&service_id(&m.name, &m.version)).await;
+        }
+        if !serving {
+            if let Err(e) = state.supervisor.stop(&id).await {
+                eprintln!("[stackyard] stopping {id}: {e}");
+            }
+        }
+    }
 }
 
 #[tauri::command]

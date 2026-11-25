@@ -377,6 +377,10 @@ mod e2e {
         let page = reqwest::get("http://127.0.0.1:58089/").await.unwrap();
         assert_eq!(page.status(), 200);
         assert!(page.text().await.unwrap().contains("phpMyAdmin"));
+
+        // Stopping its only running database stops the panel too.
+        commands::stop_service_inner(&st, &db).await.unwrap();
+        assert!(!st.supervisor.is_active(&panel).await, "panel stopped with its database");
         st.supervisor.stop_all().await;
     }
 
