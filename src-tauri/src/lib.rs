@@ -681,7 +681,27 @@ mod e2e {
         let panel_url = panel::url(&layout, &modules::load_installed(&layout, &n, &v).unwrap()).unwrap();
         let (code, _) = get("http://127.0.0.1:55050/?key=wrong".into()).await;
         assert_eq!(code, 401, "pgAdmin rejects a wrong key");
-        let (code, body) = get(panel_url).await;
+        let (code, body) = get(panel_url.clone()).await;
         assert!(code == 200 || code == 302, "pgAdmin accepts its key: {code} {body}");
+
+        // The web UI itself loads: its JS bundles are part of the package
+        // (the pgadmin4 9.19 wheel shipped without them: a blank page).
+        let res = http.get(&panel_url).send().await.unwrap();
+        let cookies: Vec<String> = res
+            .headers()
+            .get_all(reqwest::header::SET_COOKIE)
+            .iter()
+            .filter_map(|c| c.to_str().ok()?.split(';').next().map(String::from))
+            .collect();
+        let cookie = cookies.join("; ");
+        let page = http.get("http://127.0.0.1:55050/browser/").header("cookie", &cookie).send().await.unwrap();
+        assert_eq!(page.status(), 200);
+        let page = page.text().await.unwrap();
+        let bundle = page
+            .split('"')
+            .find(|s| s.starts_with("/static/js/generated/") && s.contains(".js"))
+            .unwrap_or_else(|| panic!("no bundle referenced: {page}"));
+        let js = http.get(format!("http://127.0.0.1:55050{bundle}")).header("cookie", &cookie).send().await.unwrap();
+        assert_eq!(js.status(), 200, "{bundle} is served");
     }
 }

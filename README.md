@@ -330,7 +330,7 @@ Users cannot change the registry URL; it is fixed at build time (default: the Gi
 
 ### Keeping modules up to date
 
-Modules do not update themselves: the registry is static and signed. `registry/upstream.mjs` refreshes the versions of Node.js, Python, MariaDB, MongoDB, Redis, Apache, phpMyAdmin, and pgAdmin from their official sources (two newest supported lines each, one for Apache/phpMyAdmin/pgAdmin; URLs and SHA-256 sums taken from the upstream checksum files). A new pgAdmin release also relocks its pip packages with `registry/pylock.py`, which needs `python3.12` (or set `PYTHON`):
+Modules do not update themselves: the registry is static and signed. `registry/upstream.mjs` refreshes the versions of Node.js, Python, MariaDB, MongoDB, Redis, Apache, phpMyAdmin, and pgAdmin from their official sources (two newest supported lines each, one for Apache/phpMyAdmin/pgAdmin; URLs and SHA-256 sums taken from the upstream checksum files). A pgAdmin release is only taken once its wheel is checked to ship the built web UI (the 9.19 wheel on PyPI does not, so 9.18 is kept). A new pgAdmin release also relocks its pip packages with `registry/pylock.py`, which needs `python3.12` (or set `PYTHON`):
 
 ```bash
 npm run registry:upstream check     # show what would change

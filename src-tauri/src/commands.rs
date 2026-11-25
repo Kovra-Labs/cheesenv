@@ -353,7 +353,9 @@ pub(crate) async fn update_panel(state: &AppState, name: &str, progress: &Progre
     let _guard = BusyGuard::acquire(state, name)?;
     let new_data = layout.data_dir(name, &latest);
     let old_data = layout.data_dir(name, &current.version);
-    if current.version != latest && old_data.exists() && is_empty_dir(&new_data) {
+    // Data only moves forward: an older panel (a broken release pulled back)
+    // may not understand a newer one's data, which then stays where it was.
+    if compare_versions(&latest, &current.version).is_gt() && old_data.exists() && is_empty_dir(&new_data) {
         let _ = std::fs::remove_dir(&new_data);
         std::fs::rename(&old_data, &new_data)?;
     }

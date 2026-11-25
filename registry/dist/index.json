@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "updated": "2026-11-25T06:39:20.757Z",
+  "updated": "2026-11-25T07:18:39.823Z",
   "modules": [
     {
       "name": "apache",
@@ -87,8 +87,8 @@
         "en": "pgAdmin 4 web panel for managing PostgreSQL",
         "id": "Panel web pgAdmin 4 untuk mengelola PostgreSQL"
       },
-      "latest": "9.19",
-      "manifest_sha256": "9924d20484ec7dfc3f16aa992532e329bd38d0f9d02d2974eb5678b7b0e2dfdc",
+      "latest": "9.18",
+      "manifest_sha256": "c7e7ac6eb41515bab7dba1348b4f6e3effc040cc54cae04a8183ac059cd26275",
       "license": "PostgreSQL",
       "homepage": "https://www.pgadmin.org"
     },
