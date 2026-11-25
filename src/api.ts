@@ -30,6 +30,8 @@ export interface ModuleView {
   homepage: string;
   installed: string[];
   update_available: boolean;
+  /** Modules installed along with it (e.g. `phpmyadmin` for MySQL). */
+  companions?: string[];
 }
 
 export interface IndexView {
@@ -54,7 +56,16 @@ export interface ManifestView {
   default_port: number | null;
   /** Node.js, Python, …: versions can be made the default on PATH. */
   runtime: boolean;
+  /** Modules installed along with it (e.g. `phpmyadmin` for MySQL). */
+  companions: string[];
   versions: VersionView[];
+}
+
+export interface InstallOutcome {
+  /** Companions installed along with the module. */
+  companions: string[];
+  /** Companions that failed: `"<name>: <reason>"`. */
+  companion_errors: string[];
 }
 
 export interface ServiceInfo {
@@ -70,8 +81,8 @@ export interface ServiceInfo {
   autostart: boolean;
   credentials_user: string | null;
   initialized: boolean;
-  /** Module this service is a web panel for (e.g. `mysql` for phpMyAdmin). */
-  panel_for: string | null;
+  /** Modules this service is a web panel for (e.g. `mysql`, `mariadb` for phpMyAdmin). */
+  panel_for: string[];
 }
 
 export interface Credentials {
@@ -152,7 +163,9 @@ export const api = {
 
   registryIndex: (force = false) => invoke<IndexView>('registry_index', { force }),
   registryModule: (name: string) => invoke<ManifestView>('registry_module', { name }),
-  installModule: (name: string, version: string) => invoke<void>('install_module', { name, version }),
+  installModule: (name: string, version: string) => invoke<InstallOutcome>('install_module', { name, version }),
+  /** Replaces the installed versions of a web panel with the newest; returns it. */
+  updatePanel: (name: string) => invoke<string>('update_panel', { name }),
   uninstallModule: (name: string, version: string, deleteData: boolean) =>
     invoke<void>('uninstall_module', { name, version, deleteData }),
   setRuntime: (name: string, version: string | null) => invoke<void>('set_runtime', { name, version }),

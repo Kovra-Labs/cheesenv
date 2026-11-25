@@ -55,6 +55,7 @@ pub fn run() {
             let state = AppState {
                 settings: RwLock::new(settings),
                 settings_path,
+                registry_url: registry::REGISTRY_URL.into(),
                 client,
                 supervisor,
                 busy_modules: std::sync::Mutex::new(HashSet::new()),
@@ -93,6 +94,7 @@ pub fn run() {
             commands::registry_index,
             commands::registry_module,
             commands::install_module,
+            commands::update_panel,
             commands::uninstall_module,
             commands::set_runtime,
             commands::list_services,
@@ -144,6 +146,7 @@ mod e2e {
         AppState {
             settings: RwLock::new(settings),
             settings_path: dir.join("settings.json"),
+            registry_url: std::env::var("STACKYARD_E2E_REGISTRY").unwrap_or_default(),
             client: reqwest::Client::new(),
             supervisor: Supervisor::new(Arc::new(|s| eprintln!("status {} {:?}", s.id, s.status))),
             busy_modules: std::sync::Mutex::new(HashSet::new()),
@@ -307,6 +310,107 @@ mod e2e {
         for (_, port) in ports {
             assert!(ports::is_free(port), "port {port} released");
         }
+    }
+
+    /// Installing a database also installs its web panel, which then lists it.
+    #[tokio::test]
+    #[ignore]
+    async fn database_brings_its_panel() {
+        if std::env::var_os("STACKYARD_E2E_REGISTRY").is_none() {
+            return;
+        }
+        let tmp = tempfile::tempdir().unwrap();
+        let st = state(tmp.path());
+        st.layout().ensure().unwrap();
+        let layout = st.layout();
+        let idx = st.registry(&layout).index(true).await.unwrap();
+        let latest = |n: &str| idx.index.modules.iter().find(|m| m.name == n).unwrap().latest.clone();
+        let (maria, pma) = (latest("mariadb"), latest("phpmyadmin"));
+
+        let seen = std::sync::Mutex::new(std::collections::BTreeSet::new());
+        let progress = |name: &str, _: &str, stage: &str, _: u64, _: Option<u64>| {
+            if stage == "done" {
+                seen.lock().unwrap().insert(name.to_string());
+            }
+        };
+        let outcome = commands::install_with_companions(&st, "mariadb", &maria, &progress).await.unwrap();
+        eprintln!("{outcome:?}");
+        assert!(modules::load_installed(&layout, "phpmyadmin", &pma).is_ok(), "phpMyAdmin installed along");
+        assert_eq!(seen.lock().unwrap().iter().cloned().collect::<Vec<_>>(), ["mariadb", "phpmyadmin"]);
+
+        // Already installed: a second database install does not reinstall it.
+        modules::uninstall(&layout, "mariadb", &maria, false).unwrap();
+        let again = commands::install_with_companions(&st, "mariadb", &maria, &|_, _, _, _, _| {}).await.unwrap();
+        assert!(format!("{again:?}").contains("companions: []"), "{again:?}");
+
+        let (db, panel) = (service_id("mariadb", &maria), service_id("phpmyadmin", &pma));
+        st.update_settings(|s| {
+            s.set_service(&db, settings::ServiceSettings { port: Some(53308), autostart: false })?;
+            // The panel's port stays editable like any service.
+            s.set_service(&panel, settings::ServiceSettings { port: Some(58089), autostart: false })
+        })
+        .unwrap();
+        let m = modules::load_installed(&layout, "mariadb", &maria).unwrap();
+        modules::write_configs(&layout, &m, Some(53308), true).unwrap();
+        commands::start_service_inner(&st, &db).await.expect("mariadb");
+        commands::start_service_inner(&st, &panel).await.expect("phpmyadmin");
+        tokio::time::sleep(Duration::from_secs(3)).await;
+
+        let raw = std::fs::read_to_string(layout.run_dir("phpmyadmin", &pma).join("panel.json")).unwrap();
+        let file: serde_json::Value = serde_json::from_str(&raw).unwrap();
+        assert_eq!(file["port"], 58089);
+        assert_eq!(file["targets"][0]["name"], "mariadb");
+        assert_eq!(file["targets"][0]["port"], 53308);
+        let page = reqwest::get("http://127.0.0.1:58089/").await.unwrap();
+        assert_eq!(page.status(), 200);
+        assert!(page.text().await.unwrap().contains("phpMyAdmin"));
+        st.supervisor.stop_all().await;
+    }
+
+    /// Updating a panel replaces the old version, keeping its port and data.
+    /// Needs a registry listing at least two phpMyAdmin versions.
+    #[tokio::test]
+    #[ignore]
+    async fn panel_update_keeps_port_and_data() {
+        if std::env::var_os("STACKYARD_E2E_REGISTRY").is_none() {
+            return;
+        }
+        let tmp = tempfile::tempdir().unwrap();
+        let st = state(tmp.path());
+        st.layout().ensure().unwrap();
+        let layout = st.layout();
+        let idx = st.registry(&layout).index(true).await.unwrap();
+        let entry = idx.index.modules.iter().find(|m| m.name == "phpmyadmin").unwrap().clone();
+        let manifest = st.registry(&layout).manifest(&entry).await.unwrap();
+        let mut versions: Vec<_> = manifest.versions.iter().map(|v| v.version.clone()).collect();
+        versions.sort_by(|a, b| registry::compare_versions(a, b));
+        let (old, new) = (versions[0].clone(), versions.last().unwrap().clone());
+        assert_ne!(old, new, "registry needs two phpMyAdmin versions");
+
+        let none = |_: &str, _: &str, _: &str, _: u64, _: Option<u64>| {};
+        commands::install_with_companions(&st, "phpmyadmin", &old, &none).await.unwrap();
+        let (old_id, new_id) = (service_id("phpmyadmin", &old), service_id("phpmyadmin", &new));
+        let kept = settings::ServiceSettings { port: Some(58090), autostart: true };
+        st.update_settings(|s| s.set_service(&old_id, kept.clone())).unwrap();
+        std::fs::create_dir_all(layout.data_dir("phpmyadmin", &old)).unwrap();
+        std::fs::write(layout.data_dir("phpmyadmin", &old).join("marker"), "x").unwrap();
+        commands::start_service_inner(&st, &old_id).await.unwrap();
+
+        // Not a panel: refused.
+        assert!(commands::update_panel_inner(&st, "mariadb", &none).await.is_err());
+
+        assert_eq!(commands::update_panel_inner(&st, "phpmyadmin", &none).await.unwrap(), new);
+        assert!(modules::load_installed(&layout, "phpmyadmin", &old).is_err(), "old version removed");
+        assert!(modules::load_installed(&layout, "phpmyadmin", &new).is_ok());
+        assert!(!st.supervisor.is_active(&old_id).await, "old panel stopped");
+        let s = st.settings();
+        assert_eq!(s.services.get(&new_id), Some(&kept));
+        assert!(!s.services.contains_key(&old_id));
+        assert!(layout.data_dir("phpmyadmin", &new).join("marker").exists(), "data moved");
+
+        // Already current: nothing to do.
+        assert_eq!(commands::update_panel_inner(&st, "phpmyadmin", &none).await.unwrap(), new);
+        st.supervisor.stop_all().await;
     }
 
     fn client(st: &AppState, id: &str, bin: &str) -> std::path::PathBuf {

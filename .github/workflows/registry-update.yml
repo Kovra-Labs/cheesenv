@@ -34,6 +34,10 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      # registry/pylock.py relocks pgAdmin's pip packages on the module's Python.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
       - id: check
         # One unreachable source must not block the others' updates.
         run: node registry/upstream.mjs update || echo "::warning::some upstream sources failed, see the log"

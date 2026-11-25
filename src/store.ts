@@ -74,6 +74,14 @@ export async function reloadServices() {
   store.services = await api.listServices();
 }
 
+/**
+ * Services that get a card of their own: a web panel is shown inside the card
+ * of its database, and on its own only when none of its databases is installed.
+ */
+export const cardServices = computed(() =>
+  store.services.filter((s) => !s.panel_for.some((target) => store.services.some((o) => o.name === target))),
+);
+
 export const runningCount = computed(() => store.services.filter((s) => s.status === 'running').length);
 
 export async function initStore() {

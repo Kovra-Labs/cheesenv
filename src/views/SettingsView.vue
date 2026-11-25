@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import logoUrl from '../assets/logo.webp';
 import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue';
 import { useRoute } from 'vue-router';
 import type { UnlistenFn } from '@tauri-apps/api/event';
@@ -294,14 +295,7 @@ async function saveDataDir() {
     </section>
 
     <section v-if="store.info" class="card about">
-      <svg viewBox="0 0 512 512" aria-hidden="true">
-        <rect width="512" height="512" rx="128" fill="#2196f3" />
-        <g fill="none" stroke="#fff" stroke-width="34" stroke-linejoin="round">
-          <path d="M256 104 408 180 256 256 104 180Z" fill="#fff" />
-          <path d="M104 256l152 76 152-76" />
-          <path d="M104 332l152 76 152-76" />
-        </g>
-      </svg>
+      <img :src="logoUrl" alt="" width="56" height="56" />
       <div>
         <h2>Stackyard</h2>
         <p class="hint">{{ t('settings.version', { v: store.info.version, p: store.info.platform }) }} · MIT</p>
@@ -445,7 +439,7 @@ async function saveDataDir() {
   padding: 22px 24px;
 }
 
-.about svg {
+.about img {
   width: 56px;
   height: 56px;
   flex: none;

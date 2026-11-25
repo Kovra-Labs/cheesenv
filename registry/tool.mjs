@@ -122,6 +122,7 @@ function build() {
       manifest_sha256: crypto.createHash('sha256').update(bytes).digest('hex'),
       license: json.license ?? '',
       homepage: json.homepage ?? '',
+      ...(json.companions?.length ? { companions: json.companions } : {}),
     });
   }
   const index = Buffer.from(JSON.stringify({ schema: 1, updated: new Date().toISOString(), modules }, null, 2) + '\n');

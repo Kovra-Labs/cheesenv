@@ -6,13 +6,15 @@ use std::sync::RwLock;
 use crate::error::{AppError, AppResult};
 use crate::modules::{self, InstalledModule};
 use crate::paths::{parse_service_id, Layout};
-use crate::registry::ServiceSpec;
+use crate::registry::{Registry, ServiceSpec};
 use crate::settings::Settings;
 use crate::supervisor::{Launch, Supervisor};
 
 pub struct AppState {
     pub settings: RwLock<Settings>,
     pub settings_path: PathBuf,
+    /// Module registry (fixed at build time; tests point it elsewhere).
+    pub registry_url: String,
     pub client: reqwest::Client,
     pub supervisor: Supervisor,
     /// Module names with an install/uninstall in flight.
@@ -27,6 +29,10 @@ impl AppState {
 
     pub fn layout(&self) -> Layout {
         Layout::new(self.settings().data_dir)
+    }
+
+    pub fn registry<'a>(&'a self, layout: &'a Layout) -> Registry<'a> {
+        Registry { client: &self.client, base_url: &self.registry_url, layout }
     }
 
     /// Mutates and persists settings in one step.

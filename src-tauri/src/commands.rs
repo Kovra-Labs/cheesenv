@@ -6,7 +6,7 @@ use crate::error::{AppError, AppResult};
 use crate::modules::{self, InstalledModule};
 use crate::paths::{parse_service_id, service_id, validate_name, validate_version};
 use crate::ports::{self, PortCheck};
-use crate::registry::{compare_versions, platform_key, IndexEntry, LoadedIndex, Registry, REGISTRY_URL};
+use crate::registry::{compare_versions, platform_key, IndexEntry, LoadedIndex, ModuleManifest};
 use crate::settings::{ServiceSettings, Settings, SettingsUpdate};
 use crate::state::AppState;
 use crate::supervisor::Status;
@@ -86,8 +86,7 @@ pub struct IndexView {
 
 async fn load_index(state: &AppState, force: bool) -> AppResult<LoadedIndex> {
     let layout = state.layout();
-    Registry { client: &state.client, base_url: REGISTRY_URL, layout: &layout }
-        .index(force)
+    state.registry(&layout).index(force)
         .await
 }
 
@@ -131,6 +130,8 @@ pub struct ManifestView {
     default_port: Option<u16>,
     /// Has command-line tools that can be made the default (see `runtimes`).
     runtime: bool,
+    /// Modules installed along with it (e.g. `phpmyadmin` for MySQL).
+    companions: Vec<String>,
     versions: Vec<VersionView>,
 }
 
@@ -149,9 +150,7 @@ async fn find_entry(state: &AppState, name: &str) -> AppResult<IndexEntry> {
 pub async fn registry_module(state: State<'_, AppState>, name: String) -> Cmd<ManifestView> {
     let entry = find_entry(&state, &name).await?;
     let layout = state.layout();
-    let manifest = Registry { client: &state.client, base_url: REGISTRY_URL, layout: &layout }
-        .manifest(&entry)
-        .await?;
+    let manifest = state.registry(&layout).manifest(&entry).await?;
     let platform = platform_key();
     let installed = modules::list_installed(&layout);
     let default = state.settings().runtimes.get(&name).cloned();
@@ -168,6 +167,7 @@ pub async fn registry_module(state: State<'_, AppState>, name: String) -> Cmd<Ma
     versions.sort_by(|a, b| compare_versions(&b.version, &a.version));
     let runtime = !manifest.platform_shims().is_empty();
     Ok(ManifestView {
+        companions: manifest.companions.clone(),
         name: manifest.name,
         category: manifest.category,
         has_service: manifest.service.is_some(),
@@ -209,53 +209,174 @@ impl Drop for BusyGuard<'_> {
     }
 }
 
-#[tauri::command]
-pub async fn install_module(app: AppHandle, state: State<'_, AppState>, name: String, version: String) -> Cmd<()> {
-    validate_name(&name)?;
-    validate_version(&version)?;
-    let _guard = BusyGuard::acquire(&state, &name)?;
-    let entry = find_entry(&state, &name).await?;
-    let layout = state.layout();
-    let manifest = Registry { client: &state.client, base_url: REGISTRY_URL, layout: &layout }
-        .manifest(&entry)
-        .await?;
+/// What an install added besides the requested module.
+#[derive(Serialize, Default, Debug)]
+pub struct InstallOutcome {
+    /// Companions installed along with it (e.g. `phpmyadmin` for MySQL).
+    companions: Vec<String>,
+    /// Companions that could not be installed: `"<name>: <reason>"`.
+    companion_errors: Vec<String>,
+}
 
-    let emit = |stage: &str, downloaded: u64, total: Option<u64>| {
-        let _ = app.emit(
-            EVENT_INSTALL_PROGRESS,
-            InstallProgress { name: &name, version: &version, stage, downloaded, total },
-        );
+/// Install progress callback: `(name, version, stage, downloaded, total)`.
+pub type Progress<'a> = dyn Fn(&str, &str, &str, u64, Option<u64>) + Send + Sync + 'a;
+
+#[tauri::command]
+pub async fn install_module(app: AppHandle, state: State<'_, AppState>, name: String, version: String) -> Cmd<InstallOutcome> {
+    let emit = |name: &str, version: &str, stage: &str, downloaded: u64, total: Option<u64>| {
+        let _ = app.emit(EVENT_INSTALL_PROGRESS, InstallProgress { name, version, stage, downloaded, total });
     };
+    let result = install_with_companions(&state, &name, &version, &emit).await;
+    let _ = app.emit(EVENT_SERVICES_CHANGED, ());
+    Ok(result?)
+}
+
+/// Installs `name@version`, then each of its companions that is not
+/// installed yet (latest version available for this platform). A companion
+/// that fails is reported, never undoing the main install.
+pub(crate) async fn install_with_companions(
+    state: &AppState,
+    name: &str,
+    version: &str,
+    progress: &Progress<'_>,
+) -> AppResult<InstallOutcome> {
+    validate_name(name)?;
+    validate_version(version)?;
+    let entry = find_entry(state, name).await?;
+    let layout = state.layout();
+    let manifest = state.registry(&layout).manifest(&entry).await?;
+    install_manifest(state, &manifest, version, progress).await?;
+
+    let mut outcome = InstallOutcome::default();
+    for companion in &manifest.companions {
+        if modules::list_installed(&layout).iter().any(|m| &m.name == companion) {
+            continue;
+        }
+        let installed = match latest_for_platform(state, companion).await {
+            Ok(Some((manifest, version))) => install_manifest(state, &manifest, &version, progress).await.map(|()| true),
+            Ok(None) => Ok(false), // no build for this platform
+            Err(e) => Err(e),
+        };
+        match installed {
+            Ok(true) => outcome.companions.push(companion.clone()),
+            Ok(false) => {}
+            Err(e) => {
+                eprintln!("[stackyard] companion {companion} of {name}: {e}");
+                outcome.companion_errors.push(format!("{companion}: {e}"));
+            }
+        }
+    }
+    Ok(outcome)
+}
+
+/// The manifest of `name` and its newest version built for this platform, if any.
+async fn latest_for_platform(state: &AppState, name: &str) -> AppResult<Option<(ModuleManifest, String)>> {
+    let entry = find_entry(state, name).await?;
+    let layout = state.layout();
+    let manifest = state.registry(&layout).manifest(&entry).await?;
+    let platform = platform_key();
+    let latest = manifest
+        .versions
+        .iter()
+        .filter(|v| v.assets.contains_key(&platform))
+        .map(|v| v.version.clone())
+        .max_by(|a, b| compare_versions(a, b));
+    Ok(latest.map(|v| (manifest, v)))
+}
+
+/// Updates a web panel (phpMyAdmin, pgAdmin) in place: unlike databases it is
+/// a single-instance tool, so the newest version replaces the installed ones,
+/// keeping the port, autostart and data of the newest of them.
+#[tauri::command]
+pub async fn update_panel(app: AppHandle, state: State<'_, AppState>, name: String) -> Cmd<String> {
+    let emit = |name: &str, version: &str, stage: &str, downloaded: u64, total: Option<u64>| {
+        let _ = app.emit(EVENT_INSTALL_PROGRESS, InstallProgress { name, version, stage, downloaded, total });
+    };
+    let result = update_panel_inner(&state, &name, &emit).await;
+    let _ = app.emit(EVENT_SERVICES_CHANGED, ());
+    Ok(result?)
+}
+
+pub(crate) async fn update_panel_inner(state: &AppState, name: &str, progress: &Progress<'_>) -> AppResult<String> {
+    validate_name(name)?;
+    let layout = state.layout();
+    let old: Vec<_> = modules::list_installed(&layout).into_iter().filter(|m| m.name == name).collect();
+    let Some(current) = old.iter().max_by(|a, b| compare_versions(&a.version, &b.version)) else {
+        return Err(AppError::NotFound(name.to_string()));
+    };
+    if current.panel.is_none() {
+        return Err(AppError::InvalidInput(format!("{name} is not a panel")));
+    }
+    let (manifest, latest) = latest_for_platform(state, name).await?.ok_or(AppError::UnsupportedPlatform)?;
+    if old.len() == 1 && current.version == latest {
+        return Ok(latest);
+    }
+    for m in &old {
+        state.supervisor.stop(&service_id(name, &m.version)).await?;
+    }
+    let new_id = service_id(name, &latest);
+    if !old.iter().any(|m| m.version == latest) {
+        // Before installing, so the new version is configured with the kept port.
+        let kept = state.settings().services.get(&service_id(name, &current.version)).cloned();
+        if let Some(kept) = kept {
+            state.update_settings(|s| s.set_service(&new_id, kept))?;
+        }
+        if let Err(e) = install_manifest(state, &manifest, &latest, progress).await {
+            let _ = state.update_settings(|s| s.set_service(&new_id, ServiceSettings::default()));
+            return Err(e);
+        }
+    }
+    let _guard = BusyGuard::acquire(state, name)?;
+    let new_data = layout.data_dir(name, &latest);
+    let old_data = layout.data_dir(name, &current.version);
+    if current.version != latest && old_data.exists() && is_empty_dir(&new_data) {
+        let _ = std::fs::remove_dir(&new_data);
+        std::fs::rename(&old_data, &new_data)?;
+    }
+    for m in old.iter().filter(|m| m.version != latest) {
+        modules::uninstall(&layout, name, &m.version, false)?;
+        state.update_settings(|s| s.set_service(&service_id(name, &m.version), ServiceSettings::default()))?;
+    }
+    Ok(latest)
+}
+
+fn is_empty_dir(path: &std::path::Path) -> bool {
+    std::fs::read_dir(path).map_or(true, |mut d| d.next().is_none())
+}
+
+async fn install_manifest(state: &AppState, manifest: &ModuleManifest, version: &str, progress: &Progress<'_>) -> AppResult<()> {
+    let name = manifest.name.as_str();
+    let _guard = BusyGuard::acquire(state, name)?;
+    let layout = state.layout();
     let mut last = 0u64;
-    let id = service_id(&name, &version);
+    let id = service_id(name, version);
     let result = modules::install(
         &state.client,
         &layout,
-        &manifest,
-        &version,
+        manifest,
+        version,
         |spec| state.port_for(&id, spec),
         |stage, done, total| {
             // Throttle downloads: one event per 256 KiB (and the first/final chunk).
             if stage != "download" || done == 0 || done.abs_diff(last) >= 256 * 1024 || Some(done) == total {
                 last = done;
-                emit(stage, done, total);
+                progress(name, version, stage, done, total);
             }
         },
     )
     .await;
-    emit(if result.is_ok() { "done" } else { "failed" }, 0, None);
+    progress(name, version, if result.is_ok() { "done" } else { "failed" }, 0, None);
     let installed = result?;
     // The first installed version of a runtime becomes the default.
-    if !installed.shims.is_empty() && !state.settings().runtimes.contains_key(&name) {
+    if !installed.shims.is_empty() && !state.settings().runtimes.contains_key(name) {
         match runtimes::activate(&layout, &installed) {
             Ok(()) => state.update_settings(|s| {
-                s.runtimes.insert(name.clone(), version.clone());
+                s.runtimes.insert(name.to_string(), version.to_string());
                 Ok(())
             })?,
             Err(e) => eprintln!("[stackyard] default {name} {version}: {e}"),
         }
     }
-    let _ = app.emit(EVENT_SERVICES_CHANGED, ());
     Ok(())
 }
 
@@ -333,8 +454,8 @@ pub struct ServiceInfo {
     /// Database login user, when the module generates credentials.
     credentials_user: Option<String>,
     initialized: bool,
-    /// Module this service is a web panel for (e.g. `mysql` for phpMyAdmin).
-    panel_for: Option<String>,
+    /// Modules this service is a web panel for (e.g. `mysql`, `mariadb` for phpMyAdmin).
+    panel_for: Vec<String>,
 }
 
 async fn service_info(state: &AppState, m: &InstalledModule) -> Option<ServiceInfo> {
@@ -353,7 +474,7 @@ async fn service_info(state: &AppState, m: &InstalledModule) -> Option<ServiceIn
         recent_crashes: snap.recent_crashes,
         credentials_user: spec.credentials.as_ref().map(|c| c.user.clone()),
         initialized: spec.init.is_none() || modules::is_initialized(&state.layout(), m),
-        panel_for: m.panel.as_ref().map(|p| p.target.clone()),
+        panel_for: m.panel.as_ref().map(|p| p.targets.clone()).unwrap_or_default(),
         id,
     })
 }

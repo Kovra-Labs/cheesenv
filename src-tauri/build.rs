@@ -7,6 +7,7 @@ const COMMANDS: &[&str] = &[
     "registry_index",
     "registry_module",
     "install_module",
+    "update_panel",
     "uninstall_module",
     "set_runtime",
     "list_services",

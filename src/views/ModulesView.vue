@@ -27,16 +27,30 @@ const deleteData = ref(false);
 
 let unlisten: UnlistenFn | undefined;
 
-const modules = computed(() => index.value?.modules ?? []);
+const byName = computed(() => Object.fromEntries((index.value?.modules ?? []).map((m) => [m.name, m])));
+/**
+ * Panels (phpMyAdmin, pgAdmin) are listed inside the card of their database;
+ * on their own only when installed while none of their databases is.
+ */
+const modules = computed(() => {
+  const all = index.value?.modules ?? [];
+  const hosts = (name: string) => all.filter((m) => m.companions?.includes(name));
+  return all.filter((m) => {
+    const of = hosts(m.name);
+    return !of.length || (m.installed.length > 0 && !of.some((h) => h.installed.length));
+  });
+});
 const categories = computed(() => ['all', ...new Set(modules.value.map((m) => m.category))]);
 const installedCount = computed(() => modules.value.filter((m) => m.installed.length).length);
 const filtered = computed(() => {
   const q = query.value.trim().toLowerCase();
+  const matches = (m: ModuleView) =>
+    m.name.includes(q) || describe(m).toLowerCase().includes(q) || (m.companions ?? []).some((c) => c.includes(q));
   return modules.value.filter(
     (m) =>
       (category.value === 'all' ||
         (category.value === INSTALLED ? m.installed.length > 0 : m.category === category.value)) &&
-      (!q || m.name.includes(q) || describe(m).toLowerCase().includes(q)),
+      (!q || matches(m)),
   );
 });
 
@@ -93,15 +107,43 @@ async function install(name: string, version: string) {
   const k = key(name, version);
   pending.add(k);
   try {
-    await api.installModule(name, version);
-    toast(t('modules.installedOk', { name, version }));
+    const outcome = await api.installModule(name, version);
+    toast(
+      outcome.companions.length
+        ? t('modules.installedWith', { name, version, companions: outcome.companions.join(', ') })
+        : t('modules.installedOk', { name, version }),
+    );
+    for (const err of outcome.companion_errors) toast(t('modules.companionFailed', { error: err }), 'error');
     await refreshModule(name);
+    // Companions changed too: refresh their open version lists.
+    for (const c of outcome.companions) if (manifests[c]) await attempt(() => refreshModule(c));
   } catch (e) {
     toast(errorText(e), 'error');
   } finally {
     pending.delete(k);
     delete progress[k];
   }
+}
+
+async function updatePanel(name: string) {
+  const k = key(name, 'update');
+  pending.add(k);
+  try {
+    const version = await api.updatePanel(name);
+    toast(t('modules.panelUpdated', { name, version }));
+    await load();
+    if (manifests[name]) manifests[name] = await api.registryModule(name);
+  } catch (e) {
+    toast(errorText(e), 'error');
+  } finally {
+    pending.delete(k);
+    for (const p of Object.keys(progress)) if (p.startsWith(`${name}@`)) delete progress[p];
+  }
+}
+
+/** Download/setup progress of any version of `name` (a panel being installed along or updated). */
+function progressOf(name: string) {
+  return Object.values(progress).find((p) => p.name === name) ?? null;
 }
 
 function askUninstall(name: string, version: string) {
@@ -217,6 +259,36 @@ onUnmounted(() => unlisten?.());
           <span v-else-if="m.installed.length" class="badge ok"><AppIcon name="check" :size="14" />{{ t('modules.isInstalled') }}</span>
         </div>
         <p class="desc">{{ describe(m) }}</p>
+        <div v-for="c in m.companions ?? []" :key="c" class="companion">
+          <AppIcon name="external" :size="16" />
+          <span class="c-name">{{ t('modules.includes', { name: c }) }}</span>
+          <span v-if="byName[c]?.installed.length" class="badge mono">{{ byName[c].installed.join(', ') }}</span>
+          <span v-else class="hint">{{ m.installed.length ? t('modules.companionMissing') : t('modules.companionAuto') }}</span>
+          <span v-if="progressOf(c)" class="hint mono">{{ progressText(progressOf(c)!) }}</span>
+          <span class="v-actions">
+            <button
+              v-if="byName[c]?.update_available"
+              class="btn sm primary"
+              :disabled="pending.has(key(c, 'update'))"
+              @click="updatePanel(c)"
+            >
+              <AppIcon
+                :name="pending.has(key(c, 'update')) ? 'restart' : 'download'"
+                :size="16"
+                :class="{ spin: pending.has(key(c, 'update')) }"
+              />
+              {{ t('modules.updatePanel', { v: byName[c].latest }) }}
+            </button>
+            <button
+              v-else-if="byName[c] && !byName[c].installed.length && m.installed.length"
+              class="btn sm"
+              :disabled="pending.has(key(c, byName[c].latest))"
+              @click="install(c, byName[c].latest)"
+            >
+              <AppIcon name="download" :size="16" />{{ t('common.install') }}
+            </button>
+          </span>
+        </div>
         <div class="meta">
           <span class="badge info mono">{{ t('modules.latest', { v: m.latest }) }}</span>
           <span v-if="m.installed.length" class="badge mono">{{ t('modules.installed', { v: m.installed.join(', ') }) }}</span>
@@ -284,6 +356,10 @@ onUnmounted(() => unlisten?.());
                 </CollapseTransition>
               </li>
             </ul>
+            <p v-if="manifests[m.name]?.companions.length" class="hint runtime-hint">
+              <AppIcon name="info" :size="16" />
+              <span>{{ t('modules.companionsHint', { companions: manifests[m.name].companions.join(', ') }) }}</span>
+            </p>
             <p v-if="manifests[m.name]?.runtime" class="hint runtime-hint">
               <AppIcon name="info" :size="16" />
               <span>{{ t('modules.runtimeHint') }} <RouterLink to="/settings#terminal">{{ t('modules.pathHelp') }}</RouterLink></span>
@@ -432,6 +508,23 @@ onUnmounted(() => unlisten?.());
 
 .v-name {
   font-size: 14px;
+  font-weight: 600;
+}
+
+.companion {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-height: 48px;
+  padding: 6px 6px 6px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  color: var(--ink-2);
+}
+
+.c-name {
+  color: var(--ink);
   font-weight: 600;
 }
 

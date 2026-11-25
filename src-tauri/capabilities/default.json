@@ -12,6 +12,7 @@
     "allow-registry-index",
     "allow-registry-module",
     "allow-install-module",
+    "allow-update-panel",
     "allow-uninstall-module",
     "allow-set-runtime",
     "allow-list-services",

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import logoUrl from './assets/logo.webp';
 import { ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { store, runningCount, dismissToast } from './store';
@@ -22,14 +23,7 @@ const resetScroll = () => main.value?.scrollTo({ top: 0 });
   <div class="shell">
     <aside class="side">
       <div class="brand">
-        <svg viewBox="0 0 512 512" aria-hidden="true">
-          <rect width="512" height="512" rx="128" fill="#2196F3" />
-          <g fill="none" stroke="#fff" stroke-width="34" stroke-linejoin="round">
-            <path d="M256 104 408 180 256 256 104 180Z" fill="#fff" />
-            <path d="M104 256l152 76 152-76" />
-            <path d="M104 332l152 76 152-76" />
-          </g>
-        </svg>
+        <img :src="logoUrl" alt="" width="38" height="38" />
         <div>
           <strong>Stackyard</strong>
           <span>{{ t('app.tagline') }}</span>
@@ -105,7 +99,7 @@ const resetScroll = () => main.value?.scrollTo({ top: 0 });
   padding: 0 8px;
 }
 
-.brand svg {
+.brand img {
   width: 38px;
   height: 38px;
   flex: none;
