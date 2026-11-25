@@ -7,7 +7,8 @@ const PATHS = {
   logs: 'M14 3H6a2 2 0 00-2 2v14a2 2 0 002 2h12a2 2 0 002-2V9zM14 3v6h6M8 13h8M8 17h5',
   settings: 'M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6',
   play: 'M7 4.5l12 7.5-12 7.5z',
-  stop: 'M6.5 6.5h11v11h-11z',
+  // An outlined square read as a missing glyph at button size; stop uses an X.
+  stop: 'M6 6l12 12M18 6L6 18',
   restart: 'M3 12a9 9 0 0115.5-6.2L21 8M21 3v5h-5M21 12a9 9 0 01-15.5 6.2L3 16M3 21v-5h5',
   external: 'M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 01-1 1H5a1 1 0 01-1-1V7a1 1 0 011-1h5',
   key: 'M11.5 15.5a4 4 0 11-8 0 4 4 0 018 0zM10.3 12.7L20 3M16.5 6.5l3 3M14 9l2.5 2.5',

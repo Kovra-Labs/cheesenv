@@ -1,0 +1,2 @@
+# Signed/hashed registry output must be byte-identical on every OS (no CRLF on Windows).
+registry/dist/** -text
