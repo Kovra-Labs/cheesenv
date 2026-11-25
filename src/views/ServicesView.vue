@@ -1,9 +1,22 @@
 <script setup lang="ts">
+import { computed, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { store } from '../store';
+import AppIcon from '../components/AppIcon.vue';
 import ServiceCard from '../components/ServiceCard.vue';
 
+type Filter = 'all' | 'running' | 'stopped';
+
 const { t } = useI18n();
+const filter = ref<Filter>('all');
+const isRunning = (status: string) => status !== 'stopped' && status !== 'crashed';
+const counts = computed(() => {
+  const running = store.services.filter((s) => isRunning(s.status)).length;
+  return { all: store.services.length, running, stopped: store.services.length - running };
+});
+const shown = computed(() =>
+  store.services.filter((s) => filter.value === 'all' || (filter.value === 'running') === isRunning(s.status)),
+);
 </script>
 
 <template>
@@ -14,12 +27,30 @@ const { t } = useI18n();
         <p>{{ t('services.subtitle') }}</p>
       </div>
     </header>
-    <section v-if="store.services.length" class="list">
-      <ServiceCard v-for="s in store.services" :key="s.id" :service="s" detailed />
-    </section>
+
+    <template v-if="store.services.length">
+      <div class="row" role="group" :aria-label="t('services.filter')">
+        <button
+          v-for="f in ['all', 'running', 'stopped'] as Filter[]"
+          :key="f"
+          class="chip"
+          :class="{ active: filter === f }"
+          :aria-pressed="filter === f"
+          @click="filter = f"
+        >
+          {{ t(`services.filters.${f}`) }} <span class="n">{{ counts[f] }}</span>
+        </button>
+      </div>
+      <TransitionGroup tag="section" name="list" class="list">
+        <ServiceCard v-for="s in shown" :key="s.id" :service="s" detailed />
+      </TransitionGroup>
+      <p v-if="!shown.length" class="card empty">{{ t('services.noneInFilter') }}</p>
+    </template>
     <div v-else class="card empty">
-      <p>{{ t('services.empty') }}</p>
-      <RouterLink class="btn primary" to="/modules">{{ t('dashboard.browse') }}</RouterLink>
+      <span class="empty-icon"><AppIcon name="server" :size="30" /></span>
+      <strong>{{ t('services.empty') }}</strong>
+      <p>{{ t('dashboard.empty') }}</p>
+      <RouterLink class="btn lg primary" to="/modules"><AppIcon name="download" />{{ t('dashboard.browse') }}</RouterLink>
     </div>
   </div>
 </template>
@@ -27,6 +58,6 @@ const { t } = useI18n();
 <style scoped>
 .list {
   display: grid;
-  gap: 10px;
+  gap: 14px;
 }
 </style>

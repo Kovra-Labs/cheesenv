@@ -55,6 +55,24 @@ pub struct ModuleManifest {
     /// Present for web panels that manage another module (e.g. phpMyAdmin).
     #[serde(default)]
     pub panel: Option<PanelSpec>,
+    /// Command-line tools of a runtime (e.g. `node`, `npm`), keyed by the
+    /// command name, valued by their path inside the module. Exposed on the
+    /// user's PATH through `<data>/bin` when the version is made the default.
+    #[serde(default)]
+    pub shims: BTreeMap<String, String>,
+    #[serde(default)]
+    pub shims_windows: Option<BTreeMap<String, String>>,
+}
+
+impl ModuleManifest {
+    /// Shims for the platform the app runs on.
+    pub fn platform_shims(&self) -> &BTreeMap<String, String> {
+        if cfg!(windows) {
+            self.shims_windows.as_ref().unwrap_or(&self.shims)
+        } else {
+            &self.shims
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -231,6 +249,13 @@ fn validate_manifest(m: &ModuleManifest, expected_name: &str) -> AppResult<()> {
     if m.module_files.keys().any(|f| f.is_empty() || !is_safe_relative(f)) {
         return Err(AppError::InvalidInput("module file".into()));
     }
+    for (cmd, target) in m.shims.iter().chain(m.shims_windows.iter().flatten()) {
+        let name_ok = cmd.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
+            && cmd.starts_with(|c: char| c.is_ascii_alphanumeric());
+        if !name_ok || target.is_empty() || !is_safe_relative(target) {
+            return Err(AppError::InvalidInput("shim".into()));
+        }
+    }
     let commands = steps().flat_map(|i| i.commands.iter().chain(i.commands_windows.iter().flatten()));
     if commands.clone().any(|c| c.is_empty()) {
         return Err(AppError::InvalidInput("empty command".into()));
@@ -276,6 +301,15 @@ pub fn is_plain_file_name(s: &str) -> bool {
 fn is_safe_relative(s: &str) -> bool {
     s.is_empty() || s.split('/').all(is_plain_file_name)
 }
+
+/// Registry every install comes from, fixed when the app is built so users
+/// never have to configure it. Override for your own server with
+/// `STACKYARD_REGISTRY_URL=https://registry.example.com npm run tauri build`;
+/// its `index.json` must still be signed with `registry.pub`.
+pub const REGISTRY_URL: &str = match option_env!("STACKYARD_REGISTRY_URL") {
+    Some(url) => url,
+    None => "https://pipsyrs.github.io/stackyard",
+};
 
 pub struct Registry<'a> {
     pub client: &'a reqwest::Client,

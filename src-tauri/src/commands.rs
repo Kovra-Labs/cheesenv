@@ -6,11 +6,11 @@ use crate::error::{AppError, AppResult};
 use crate::modules::{self, InstalledModule};
 use crate::paths::{parse_service_id, service_id, validate_name, validate_version};
 use crate::ports::{self, PortCheck};
-use crate::registry::{compare_versions, platform_key, IndexEntry, LoadedIndex, Registry};
+use crate::registry::{compare_versions, platform_key, IndexEntry, LoadedIndex, Registry, REGISTRY_URL};
 use crate::settings::{ServiceSettings, Settings, SettingsUpdate};
 use crate::state::AppState;
 use crate::supervisor::Status;
-use crate::{logs, panel, tray};
+use crate::{logs, panel, runtimes, tray};
 
 pub const EVENT_SERVICE_STATUS: &str = "service-status";
 pub const EVENT_SERVICES_CHANGED: &str = "services-changed";
@@ -25,6 +25,8 @@ pub struct AppInfo {
     version: String,
     platform: String,
     data_dir: String,
+    /// Folder holding the default runtimes' shims (to be added to PATH).
+    bin_dir: String,
 }
 
 #[tauri::command]
@@ -33,6 +35,7 @@ pub fn get_app_info(app: AppHandle, state: State<'_, AppState>) -> AppInfo {
         version: app.package_info().version.to_string(),
         platform: platform_key(),
         data_dir: state.settings().data_dir.display().to_string(),
+        bin_dir: state.layout().shim_dir().display().to_string(),
     }
 }
 
@@ -82,9 +85,8 @@ pub struct IndexView {
 }
 
 async fn load_index(state: &AppState, force: bool) -> AppResult<LoadedIndex> {
-    let settings = state.settings();
     let layout = state.layout();
-    Registry { client: &state.client, base_url: &settings.registry_url, layout: &layout }
+    Registry { client: &state.client, base_url: REGISTRY_URL, layout: &layout }
         .index(force)
         .await
 }
@@ -117,6 +119,8 @@ pub struct VersionView {
     version: String,
     available: bool,
     installed: bool,
+    /// This version is the runtime's default (on PATH).
+    default: bool,
 }
 
 #[derive(Serialize)]
@@ -125,6 +129,8 @@ pub struct ManifestView {
     category: String,
     has_service: bool,
     default_port: Option<u16>,
+    /// Has command-line tools that can be made the default (see `runtimes`).
+    runtime: bool,
     versions: Vec<VersionView>,
 }
 
@@ -142,13 +148,13 @@ async fn find_entry(state: &AppState, name: &str) -> AppResult<IndexEntry> {
 #[tauri::command]
 pub async fn registry_module(state: State<'_, AppState>, name: String) -> Cmd<ManifestView> {
     let entry = find_entry(&state, &name).await?;
-    let settings = state.settings();
     let layout = state.layout();
-    let manifest = Registry { client: &state.client, base_url: &settings.registry_url, layout: &layout }
+    let manifest = Registry { client: &state.client, base_url: REGISTRY_URL, layout: &layout }
         .manifest(&entry)
         .await?;
     let platform = platform_key();
     let installed = modules::list_installed(&layout);
+    let default = state.settings().runtimes.get(&name).cloned();
     let mut versions: Vec<VersionView> = manifest
         .versions
         .iter()
@@ -156,14 +162,17 @@ pub async fn registry_module(state: State<'_, AppState>, name: String) -> Cmd<Ma
             version: v.version.clone(),
             available: v.assets.contains_key(&platform),
             installed: installed.iter().any(|m| m.name == name && m.version == v.version),
+            default: default.as_deref() == Some(v.version.as_str()),
         })
         .collect();
     versions.sort_by(|a, b| compare_versions(&b.version, &a.version));
+    let runtime = !manifest.platform_shims().is_empty();
     Ok(ManifestView {
         name: manifest.name,
         category: manifest.category,
         has_service: manifest.service.is_some(),
         default_port: manifest.service.as_ref().and_then(modules::default_port),
+        runtime,
         versions,
     })
 }
@@ -206,9 +215,8 @@ pub async fn install_module(app: AppHandle, state: State<'_, AppState>, name: St
     validate_version(&version)?;
     let _guard = BusyGuard::acquire(&state, &name)?;
     let entry = find_entry(&state, &name).await?;
-    let settings = state.settings();
     let layout = state.layout();
-    let manifest = Registry { client: &state.client, base_url: &settings.registry_url, layout: &layout }
+    let manifest = Registry { client: &state.client, base_url: REGISTRY_URL, layout: &layout }
         .manifest(&entry)
         .await?;
 
@@ -236,8 +244,44 @@ pub async fn install_module(app: AppHandle, state: State<'_, AppState>, name: St
     )
     .await;
     emit(if result.is_ok() { "done" } else { "failed" }, 0, None);
-    result?;
+    let installed = result?;
+    // The first installed version of a runtime becomes the default.
+    if !installed.shims.is_empty() && !state.settings().runtimes.contains_key(&name) {
+        match runtimes::activate(&layout, &installed) {
+            Ok(()) => state.update_settings(|s| {
+                s.runtimes.insert(name.clone(), version.clone());
+                Ok(())
+            })?,
+            Err(e) => eprintln!("[stackyard] default {name} {version}: {e}"),
+        }
+    }
     let _ = app.emit(EVENT_SERVICES_CHANGED, ());
+    Ok(())
+}
+
+/// Makes `version` the runtime's default (its tools on PATH via shims), or
+/// removes the default when `version` is `None`.
+#[tauri::command]
+pub async fn set_runtime(state: State<'_, AppState>, name: String, version: Option<String>) -> Cmd<()> {
+    validate_name(&name)?;
+    let _guard = BusyGuard::acquire(&state, &name)?;
+    let layout = state.layout();
+    if let Some(v) = &version {
+        runtimes::activate(&layout, &modules::load_installed(&layout, &name, v)?)?;
+    }
+    let previous = state.settings().runtimes.get(&name).cloned();
+    if let Some(old) = previous.filter(|old| Some(old) != version.as_ref()) {
+        if let Ok(m) = modules::load_installed(&layout, &name, &old) {
+            runtimes::deactivate(&layout, &m)?; // shims now owned by `version` are kept
+        }
+    }
+    state.update_settings(|s| {
+        match &version {
+            Some(v) => s.runtimes.insert(name.clone(), v.clone()),
+            None => s.runtimes.remove(&name),
+        };
+        Ok(())
+    })?;
     Ok(())
 }
 
@@ -256,8 +300,18 @@ pub async fn uninstall_module(
         return Err(AppError::ServiceRunning);
     }
     let _guard = BusyGuard::acquire(&state, &name)?;
-    modules::uninstall(&state.layout(), &name, &version, delete_data)?;
-    state.update_settings(|s| s.set_service(&id, ServiceSettings::default()))?;
+    let layout = state.layout();
+    let is_default = state.settings().runtimes.get(&name) == Some(&version);
+    if is_default {
+        runtimes::deactivate(&layout, &modules::load_installed(&layout, &name, &version)?)?;
+    }
+    modules::uninstall(&layout, &name, &version, delete_data)?;
+    state.update_settings(|s| {
+        if is_default {
+            s.runtimes.remove(&name);
+        }
+        s.set_service(&id, ServiceSettings::default())
+    })?;
     let _ = app.emit(EVENT_SERVICES_CHANGED, ());
     Ok(())
 }

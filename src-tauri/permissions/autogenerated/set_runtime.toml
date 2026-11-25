@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-set-runtime"
+description = "Enables the set_runtime command without any pre-configured scope."
+commands.allow = ["set_runtime"]
+
+[[permission]]
+identifier = "deny-set-runtime"
+description = "Denies the set_runtime command without any pre-configured scope."
+commands.deny = ["set_runtime"]

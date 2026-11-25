@@ -19,17 +19,34 @@ const tone = computed(
 
 <style scoped>
 .dot {
-  width: 7px;
-  height: 7px;
+  position: relative;
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
   background: currentColor;
 }
 
-.warn .dot {
-  animation: pulse 1s ease-in-out infinite alternate;
+.ok .dot::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: currentColor;
+  animation: ping 1.8s cubic-bezier(0.2, 0.8, 0.2, 1) infinite;
 }
 
-@keyframes pulse {
+.warn .dot {
+  animation: blink 0.9s ease-in-out infinite alternate;
+}
+
+@keyframes ping {
+  to {
+    transform: scale(2.4);
+    opacity: 0;
+  }
+}
+
+@keyframes blink {
   to {
     opacity: 0.3;
   }

@@ -1,7 +1,7 @@
 {
   "name": "stackyard",
   "private": true,
-  "version": "0.2.1",
+  "version": "0.2.2",
   "type": "module",
   "license": "MIT",
   "scripts": {
@@ -10,6 +10,7 @@
     "typecheck": "vue-tsc --noEmit",
     "tauri": "tauri",
     "registry": "node registry/tool.mjs",
+    "registry:upstream": "node registry/upstream.mjs",
     "version": "node scripts/sync-version.mjs"
   },
   "dependencies": {
