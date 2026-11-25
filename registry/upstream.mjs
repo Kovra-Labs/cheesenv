@@ -54,6 +54,34 @@ const sumFile = (body) =>
       .map(([h, f]) => [f.replace(/^\*/, ''), h.toLowerCase()]),
   );
 
+/** File names in a remote zip (a wheel), read from its central directory with range requests. */
+async function zipNames(url) {
+  const range = async (r) => {
+    const res = await fetch(url, { headers: { range: `bytes=${r}` } });
+    if (res.status !== 206) throw new Error(`${url}: no range support (HTTP ${res.status})`);
+    return { body: Buffer.from(await res.arrayBuffer()), total: Number(res.headers.get('content-range').split('/')[1]) };
+  };
+  const { total } = await range('0-0');
+  const { body: tail } = await range(`${Math.max(0, total - 65536)}-${total - 1}`);
+  const eocd = tail.lastIndexOf(Buffer.from([0x50, 0x4b, 5, 6]));
+  if (eocd < 0) throw new Error(`${url}: not a zip`);
+  let size = tail.readUInt32LE(eocd + 12);
+  let offset = tail.readUInt32LE(eocd + 16);
+  if (offset === 0xffffffff) {
+    const z64 = tail.lastIndexOf(Buffer.from([0x50, 0x4b, 6, 6]));
+    size = Number(tail.readBigUInt64LE(z64 + 40));
+    offset = Number(tail.readBigUInt64LE(z64 + 48));
+  }
+  const { body: cd } = await range(`${offset}-${offset + size - 1}`);
+  const names = [];
+  for (let p = 0; p + 46 <= cd.length && cd.readUInt32LE(p) === 0x02014b50; ) {
+    const [n, e, c] = [cd.readUInt16LE(p + 28), cd.readUInt16LE(p + 30), cd.readUInt16LE(p + 32)];
+    names.push(cd.toString('utf8', p + 46, p + 46 + n));
+    p += 46 + n + e + c;
+  }
+  return names;
+}
+
 const versionKey = (v) => v.split(/\D+/).filter(Boolean).map(Number);
 const cmp = (a, b) => {
   const [x, y] = [versionKey(a), versionKey(b)];
@@ -253,7 +281,7 @@ Object.assign(sources, {
 
   /** pgAdmin 4 from PyPI on Python 3.12; a new pgAdmin also relocks its pip packages. */
   async pgadmin(manifest) {
-    const { info } = await json('https://pypi.org/pypi/pgadmin4/json');
+    const version = await pgadminRelease();
     const repo = 'astral-sh/python-build-standalone';
     const { tag_name: tag } = await json(`https://api.github.com/repos/${repo}/releases/latest`);
     const base = `https://github.com/${repo}/releases/download/${tag}/`;
@@ -271,10 +299,31 @@ Object.assign(sources, {
       const file = `cpython-${py}+${tag}-${triple}-install_only.tar.gz`;
       if (sums.has(file)) assets[key] = { ...a, url: base + file.replace('+', '%2B'), sha256: sums.get(file) };
     }
-    const relock = info.version !== newest(manifest).version;
-    return { versions: [{ version: info.version, assets }], relock: relock && [`pgadmin4==${info.version}`, '--python', '3.12'] };
+    const relock = version !== newest(manifest).version;
+    return { versions: [{ version, assets }], relock: relock && [`pgadmin4==${version}`, '--python', '3.12'] };
   },
 });
+
+/**
+ * Newest pgAdmin release whose wheel ships its built web UI: the pgadmin4 9.19
+ * wheel on PyPI lacks `static/js/generated` (every page loads blank), so a
+ * release is only taken once its wheel is checked.
+ */
+async function pgadminRelease() {
+  const { releases } = await json('https://pypi.org/pypi/pgadmin4/json');
+  const wheel = (v) => releases[v].find((f) => f.filename.endsWith('.whl') && !f.yanked);
+  const candidates = Object.keys(releases)
+    .filter((v) => /^\d+(\.\d+)+$/.test(v) && wheel(v))
+    .sort(cmp)
+    .reverse()
+    .slice(0, 5);
+  for (const v of candidates) {
+    const names = await zipNames(wheel(v).url);
+    if (names.some((n) => n.startsWith('pgadmin4/pgadmin/static/js/generated/'))) return v;
+    console.warn(`pgadmin4 ${v}: wheel has no built web UI (static/js/generated), skipped`);
+  }
+  throw new Error('no recent pgadmin4 release ships its built web UI');
+}
 
 const newest = (manifest) => [...manifest.versions].sort((a, b) => cmp(b.version, a.version))[0];
 
