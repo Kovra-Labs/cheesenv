@@ -1,6 +1,6 @@
 # Stackyard
 
-A cross-platform desktop app (Windows, macOS, Linux) for running a local development environment — web servers, runtimes, databases, and admin panels — with every module downloaded from a single signed registry. Free and open source (MIT).
+A cross-platform desktop app (Windows, macOS, Linux) for running a local development environment — web servers, runtimes, databases, and admin panels — with every module downloaded from a single signed registry. Free and open source ([MIT](LICENSE)).
 
 > Status: **v0.3** — see `docs/PRD Stackyard.pdf` for the full roadmap.
 
@@ -19,6 +19,7 @@ A cross-platform desktop app (Windows, macOS, Linux) for running a local develop
 - [Registry](#registry)
   - [Keeping modules up to date](#keeping-modules-up-to-date)
 - [Project structure](#project-structure)
+- [License](#license)
 
 ## Features
 
@@ -403,3 +404,7 @@ registry/            Module manifests, signing tool (tool.mjs), upstream checker
 ```
 
 User data: `~/Stackyard/` → `bin/`, `modules/`, `etc/`, `data/`, `www/`, `logs/`, `certs/`, `cache/`.
+
+## License
+
+Stackyard is released under the [MIT License](LICENSE). You may use, copy, modify, and distribute it, including commercially, as long as the copyright notice and license text are kept.
