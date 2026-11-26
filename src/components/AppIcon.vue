@@ -38,6 +38,7 @@ const PATHS = {
   cloud: 'M7 18a5 5 0 01-.6-10A6 6 0 0118 9a4.5 4.5 0 01-.5 9z',
   drive: 'M3 13h18v6H3zM3 13l3-8h12l3 8M7 16h.01',
   shield: 'M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z',
+  lock: 'M5 11h14v10H5zM8 11V7a4 4 0 018 0v4',
   power: 'M12 3v8M6.4 6.4a8 8 0 1011.2 0',
 } as const;
 

@@ -25,6 +25,8 @@ pub struct Settings {
     pub services: BTreeMap<String, ServiceSettings>,
     /// Default version per runtime module (e.g. `node` → `26.13.1`).
     pub runtimes: BTreeMap<String, String>,
+    /// PHP release line per project (`toko` → `8.3`); others use the newest PHP.
+    pub project_php: BTreeMap<String, String>,
 }
 
 impl Default for Settings {
@@ -37,6 +39,7 @@ impl Default for Settings {
             check_updates: true,
             services: BTreeMap::new(),
             runtimes: BTreeMap::new(),
+            project_php: BTreeMap::new(),
         }
     }
 }

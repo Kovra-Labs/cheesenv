@@ -2,7 +2,7 @@
 
 A cross-platform desktop app (Windows, macOS, Linux) for running a local development environment — web servers, runtimes, databases, and admin panels — with every module downloaded from a single signed registry. Free and open source (MIT).
 
-> Status: **v0.2** — see `docs/PRD Stackyard.pdf` for the full roadmap.
+> Status: **v0.3** — see `docs/PRD Stackyard.pdf` for the full roadmap.
 
 ## Contents
 
@@ -28,6 +28,8 @@ A cross-platform desktop app (Windows, macOS, Linux) for running a local develop
 - **Process supervisor** — start/stop/restart one or all services, real-time status, crash detection with automatic restart (max 3× per minute), and autostart when the app opens.
 - **Port conflict detection** with a suggested free port. Every service binds to `127.0.0.1`.
 - **Config from templates** — files edited by the user are backed up (`*.bak-<time>`) before being overwritten.
+- **Projects on `.test` domains** — every folder in `~/Stackyard/www` is served at `<folder>.test` by nginx and Apache (`public/` is used as web root when present, `.php` goes to PHP-FPM), with a PHP version per project and local HTTPS from a name-constrained Stackyard CA. Stackyard adds the domains to the hosts file after one administrator prompt.
+- **Built-in terminal** — tabs with a shell whose `PATH` already starts with the default runtimes and the installed modules' tools (`mysql`, `psql`, `redis-cli`, …); open one straight in a project folder.
 - **Runtimes on your PATH** — make one Node.js or Python version the default and use `node`, `npm`, `python`, `pip` straight from your terminal.
 - **Log viewer** with filtering and live tail.
 - **System tray** — closing the window keeps services running; quitting from the tray stops them all. Only one instance runs at a time: launching the app again brings the existing window back.
@@ -39,7 +41,7 @@ A cross-platform desktop app (Windows, macOS, Linux) for running a local develop
 |---|---|---|---|---|
 | nginx | Web server | 1.30.5 | Windows, macOS, Linux (x64/arm64) | jirutka/nginx-binaries |
 | Apache HTTP Server | Web server | 2.4 | Windows; Linux & macOS (x64/arm64) once built by CI¹ | Apache Lounge (Windows), Stackyard build |
-| PHP-FPM | Runtime | 8.4, 8.3 | macOS, Linux | static-php-cli |
+| PHP | Runtime | 8.4, 8.3 | all platforms (PHP-FPM on macOS/Linux, `php-cgi` FastCGI on Windows) | static-php-cli, windows.php.net |
 | Node.js | Runtime | 26 LTS, 24 LTS | all platforms | nodejs.org |
 | Python | Runtime | 3.15, 3.14 | all platforms | python-build-standalone |
 | MySQL | Database | 8.4 LTS | Linux x64, macOS 15+, Windows | mysql.com |
@@ -55,6 +57,20 @@ A cross-platform desktop app (Windows, macOS, Linux) for running a local develop
 Default ports (Linux/macOS add 8000 to ports below 1024): nginx 80 → 8080, Apache 82 → 8082, phpMyAdmin 8081, pgAdmin 5050, PHP-FPM 9000, MySQL 3306, MariaDB 3307, PostgreSQL 5432, MongoDB 27017, Redis 6379. Apache serves `~/Stackyard/www`, honours `.htaccess`, and passes `*.php` to PHP-FPM on port 9000. On Windows, Apache needs the [Visual C++ Redistributable](https://learn.microsoft.com/cpp/windows/latest-supported-vc-redist).
 
 MySQL, MariaDB, and PostgreSQL are initialised on first start; the root password is randomly generated and stored in the OS keychain (see **Credentials** on the Services page). MongoDB and Redis run without authentication, like their default installs, and only listen on `127.0.0.1`.
+
+### Projects and `.test` domains
+
+Every folder in `~/Stackyard/www` is a project, served at `<folder>.test` (folder names must be lowercase letters, digits, and dashes). Create one with **Projects → New project**, or just add or symlink a folder there; when the folder has a `public/` subfolder (Laravel, Symfony, …) that becomes the web root, and every other URL falls back to `index.php` when PHP is installed.
+
+- **Domains** — `.test` names resolve through the system hosts file. **Register domains** writes them in a block marked `# BEGIN Stackyard` … `# END Stackyard` after one administrator prompt (pkexec on Linux, the macOS password dialog, UAC on Windows); nothing outside that block is changed, and the first change keeps a copy as `hosts.stackyard-backup`. The page also shows the lines to add by hand.
+- **Web servers** — Stackyard writes `etc/<server>/<version>/vhosts/stackyard-projects.conf` and restarts a running nginx or Apache when the project list changes. Your own `*.conf` files in that `vhosts` folder are included too. An nginx or Apache installed from an older registry template gets that include added automatically (the previous config is kept as `*.bak-<time>`).
+- **PHP per project** — each project card has a PHP picker (any installed release line, or the newest). PHP versions used at the same time get their own FastCGI ports automatically (saved as their port setting), and the chosen version is started when a web server runs.
+- **HTTPS** — **Enable HTTPS** creates a local certificate authority (`certs/stackyard-ca.pem`) and asks the OS to trust it (one administrator prompt: the system store on Linux, the System keychain on macOS, the Windows Root store). The CA is name-constrained to `.test`, `localhost` and loopback addresses, so even a leaked key cannot vouch for any other site. nginx then serves every project on HTTPS too (443, or 8443 next to 8080), with one certificate covering all project domains that is reissued when projects change or it nears expiry. On Linux, Chrome and Firefox keep their own certificate databases: the CA is added there with NSS `certutil` when it is installed (`libnss3-tools` / `nss-tools`). Apache serves projects over HTTP only.
+- **Ports** — on macOS nginx listens on 8080 (and 8443), so projects open at `http://<folder>.test:8080/`. On Linux, **Use ports 80/443** gives Stackyard's nginx binary the `cap_net_bind_service` file capability after one administrator prompt (nginx itself still runs as you), and nginx moves to 80/443. A new nginx version starts on 8080 again until permitted; a port set by hand on the Services page is kept.
+
+### Built-in terminal
+
+**Terminal** opens tabs running your shell (`$SHELL` on Linux/macOS, PowerShell on Windows) in `www/` or in a project folder (**Terminal** on a project card). Its `PATH` starts with `~/Stackyard/bin` and the newest installed version of every module, so `node`, `python`, `mysql`, `psql`, `mongosh`, `redis-cli`, … work without any PATH setup. Shells keep running while you browse other pages. Copy with <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>C</kbd>, paste with <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>V</kbd>.
 
 ### Using Node.js and Python from the terminal
 
@@ -355,6 +371,11 @@ src-tauri/src/       Rust core
   modules.rs         Install/uninstall, config templates, setup
   panel.rs           Web panels (phpMyAdmin/pgAdmin): panel.json, tokenised URLs
   runtimes.rs        Default Node.js/Python versions: shims in ~/Stackyard/bin
+  projects.rs        www/ folders → <name>.test vhosts for nginx/Apache
+  admin.rs           Elevated helper: --hosts-sync, --trust-ca, --grant-ports
+  hosts.rs           Managed hosts-file block
+  tls.rs             Local CA and project certificates (HTTPS)
+  terminal.rs        Built-in terminal: shells in a PTY with Stackyard's PATH
   ports.rs logs.rs settings.rs paths.rs tray.rs updater.rs
 registry/            Module manifests, signing tool (tool.mjs), upstream checker (upstream.mjs)
   build/             Build scripts for Redis/Apache (used by the Binaries workflow)

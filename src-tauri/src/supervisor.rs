@@ -32,6 +32,7 @@ pub struct Launch {
     pub program: PathBuf,
     pub args: Vec<String>,
     pub cwd: PathBuf,
+    pub env: Vec<(String, String)>,
     pub log_file: PathBuf,
     pub auto_restart: bool,
 }
@@ -284,6 +285,7 @@ fn spawn(launch: &Launch) -> AppResult<Child> {
         .open(&launch.log_file)?;
     let mut cmd = Command::new(&launch.program);
     cmd.args(&launch.args)
+        .envs(launch.env.iter().map(|(k, v)| (k, v)))
         .current_dir(&launch.cwd)
         .stdin(Stdio::null())
         .stdout(Stdio::from(log.try_clone()?))
@@ -358,6 +360,7 @@ mod tests {
             program: "/bin/sh".into(),
             args: vec!["-c".into(), script.into()],
             cwd: dir.to_path_buf(),
+            env: Vec::new(),
             log_file: dir.join("test.log"),
             auto_restart,
         }

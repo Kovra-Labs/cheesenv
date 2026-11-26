@@ -46,7 +46,19 @@ impl AppState {
     }
 
     pub fn port_for(&self, id: &str, spec: &ServiceSpec) -> Option<u16> {
-        self.settings().service(id).port.or_else(|| modules::default_port(spec))
+        self.settings()
+            .service(id)
+            .port
+            .or_else(|| modules::default_port(spec, || crate::admin::low_ports_granted(&self.program_of(id).unwrap_or_default())))
+    }
+
+    /// The executable an installed service runs.
+    pub fn program_of(&self, id: &str) -> Option<std::path::PathBuf> {
+        let (name, version) = parse_service_id(id).ok()?;
+        let layout = self.layout();
+        let m = modules::load_installed(&layout, &name, &version).ok()?;
+        let vars = modules::template_vars(&layout, &m, None);
+        modules::resolve_command(&layout, &m, m.service.as_ref()?.args(), &vars).ok().map(|(p, _)| p)
     }
 
     /// Resolves an installed service into a ready-to-spawn launch plan.
@@ -65,6 +77,7 @@ impl AppState {
             program,
             args,
             cwd: layout.conf_dir(&name, &version),
+            env: spec.env.iter().map(|(k, v)| (k.clone(), modules::render(v, &vars))).collect(),
             log_file: layout.logs().join(format!("{name}-{version}.log")),
             auto_restart: self.settings().auto_restart,
         };

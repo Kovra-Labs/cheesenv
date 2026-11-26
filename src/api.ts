@@ -1,4 +1,4 @@
-import { invoke } from '@tauri-apps/api/core';
+import { Channel, invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 
 export type ServiceStatus = 'stopped' | 'starting' | 'running' | 'stopping' | 'crashed';
@@ -139,6 +139,67 @@ export interface LogChunk {
   reset: boolean;
 }
 
+export interface Project {
+  name: string;
+  /** `<name>.test`, or null when the folder name is not a valid domain label. */
+  domain: string | null;
+  path: string;
+  /** Folder served as web root (`public/` when present). */
+  doc_root: string;
+  /** PHP service id handling its `.php` files. */
+  php: string | null;
+  /** Chosen PHP release line (`8.3`); null = the newest PHP. */
+  php_line: string | null;
+  /** The chosen line is not installed (the newest PHP serves it meanwhile). */
+  php_missing: boolean;
+}
+
+export interface WebServer {
+  id: string;
+  name: string;
+  version: string;
+  port: number | null;
+  /** HTTPS port of the projects (nginx with HTTPS enabled). */
+  https_port: number | null;
+  running: boolean;
+  /** Its config includes Stackyard's vhosts. */
+  vhosts: boolean;
+  /** Linux nginx: may use ports 80/443; null when not applicable. */
+  low_ports: boolean | null;
+}
+
+export interface PhpVersion {
+  id: string;
+  version: string;
+  line: string;
+  port: number | null;
+  running: boolean;
+}
+
+export interface BrowserTrust {
+  databases: number;
+  imported: number;
+  /** Browser profiles exist but NSS certutil is not installed (Linux). */
+  tool_missing: boolean;
+}
+
+export interface ProjectsView {
+  projects: Project[];
+  servers: WebServer[];
+  /** Installed PHP versions, newest (the default) first. */
+  php: PhpVersion[];
+  tls: { enabled: boolean; trusted: boolean };
+  hosts_synced: boolean;
+  hosts_file: string;
+  /** Lines to add to the hosts file by hand. */
+  hosts_lines: string[];
+}
+
+export interface TerminalExit {
+  id: number;
+  code: number | null;
+}
+
 /** Error shape produced by the Rust core (see src-tauri/src/error.rs). */
 export interface AppError {
   code: string;
@@ -188,8 +249,28 @@ export const api = {
   checkUpdate: () => invoke<UpdateInfo | null>('check_update'),
   installUpdate: () => invoke<void>('install_update'),
 
-  openFolder: (kind: 'root' | 'www' | 'logs' | 'config' | 'module', id?: string) =>
+  openFolder: (kind: 'root' | 'www' | 'logs' | 'config' | 'module' | 'project', id?: string) =>
     invoke<void>('open_folder', { kind, id: id ?? null }),
+
+  /** Regenerates the web servers' vhosts from www/ and returns the projects. */
+  syncProjects: () => invoke<ProjectsView>('sync_projects'),
+  createProject: (name: string) => invoke<ProjectsView>('create_project', { name }),
+  /** Writes the `.test` domains to the hosts file (administrator prompt). */
+  syncHosts: () => invoke<void>('sync_hosts'),
+  openProject: (name: string) => invoke<void>('open_project', { name }),
+  /** PHP release line for a project (`8.3`), or null for the newest. */
+  setProjectPhp: (name: string, line: string | null) => invoke<ProjectsView>('set_project_php', { name, line }),
+  /** Creates and trusts the local CA (administrator prompt), then serves HTTPS. */
+  enableHttps: () => invoke<BrowserTrust>('enable_https'),
+  /** Linux: lets nginx use ports 80/443 (administrator prompt). */
+  enableLowPorts: (id: string) => invoke<void>('enable_low_ports', { id }),
+
+  /** Starts a shell; its output arrives as raw bytes on `onOutput`. */
+  terminalOpen: (cols: number, rows: number, project: string | null, onOutput: Channel<ArrayBuffer>) =>
+    invoke<number>('terminal_open', { cols, rows, project, onOutput }),
+  terminalWrite: (id: number, data: string) => invoke<void>('terminal_write', { id, data }),
+  terminalResize: (id: number, cols: number, rows: number) => invoke<void>('terminal_resize', { id, cols, rows }),
+  terminalClose: (id: number) => invoke<void>('terminal_close', { id }),
 };
 
 export const events = {
@@ -201,6 +282,8 @@ export const events = {
   /** Built-in panels (phpMyAdmin, pgAdmin) being installed/updated in the background. */
   panelsSetup: (cb: (p: InstallProgress) => void): Promise<UnlistenFn> =>
     listen<InstallProgress>('panels-setup', (e) => cb(e.payload)),
+  terminalExit: (cb: (e: TerminalExit) => void): Promise<UnlistenFn> =>
+    listen<TerminalExit>('terminal-exit', (e) => cb(e.payload)),
   updateProgress: (cb: (p: UpdateProgress) => void): Promise<UnlistenFn> =>
     listen<UpdateProgress>('update-progress', (e) => cb(e.payload)),
 };

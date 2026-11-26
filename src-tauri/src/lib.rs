@@ -2,17 +2,22 @@ mod commands;
 mod download;
 mod error;
 mod extract;
+mod admin;
+mod hosts;
 mod logs;
 mod modules;
 mod panel;
 mod paths;
 mod ports;
+mod projects;
 mod registry;
 mod runtimes;
 mod secrets;
 mod settings;
 mod state;
 mod supervisor;
+mod terminal;
+mod tls;
 mod tray;
 mod updater;
 
@@ -28,6 +33,12 @@ use crate::settings::Settings;
 use crate::state::AppState;
 use crate::supervisor::Supervisor;
 
+/// Runs the elevated hosts-file helper when the process was started as one
+/// (`stackyard --hosts-sync …`); returns its exit code, or `None` to start the app.
+pub fn run_helper() -> Option<i32> {
+    admin::helper_main(&std::env::args().collect::<Vec<_>>())
+}
+
 pub fn run() {
     tauri::Builder::default()
         // Must be registered first: a second launch exits here and just brings
@@ -36,6 +47,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(updater::PendingUpdate::default())
+        .manage(terminal::Terminals::default())
         .setup(|app| {
             let handle = app.handle().clone();
             let settings_path = app.path().app_config_dir()?.join("settings.json");
@@ -125,6 +137,17 @@ pub fn run() {
             commands::open_panel,
             commands::open_folder,
             commands::get_credentials,
+            commands::sync_projects,
+            commands::create_project,
+            commands::sync_hosts,
+            commands::set_project_php,
+            commands::enable_https,
+            commands::enable_low_ports,
+            commands::open_project,
+            commands::terminal_open,
+            commands::terminal_write,
+            commands::terminal_resize,
+            commands::terminal_close,
             updater::check_update,
             updater::install_update,
         ])
@@ -136,6 +159,7 @@ pub fn run() {
                 let state = app.state::<AppState>();
                 if !state.quitting.swap(true, Ordering::SeqCst) {
                     api.prevent_exit();
+                    app.state::<terminal::Terminals>().close_all();
                     let app = app.clone();
                     tauri::async_runtime::spawn(async move {
                         app.state::<AppState>().supervisor.stop_all().await;
@@ -168,17 +192,22 @@ mod e2e {
     }
 
     async fn install(st: &AppState, name: &str) -> String {
+        install_version(st, name, None).await
+    }
+
+    /// Installs `version` of a module (the latest when `None`); returns its service id.
+    async fn install_version(st: &AppState, name: &str, version: Option<&str>) -> String {
         let url = std::env::var("STACKYARD_E2E_REGISTRY").expect("STACKYARD_E2E_REGISTRY");
         let layout = st.layout();
         let reg = Registry { client: &st.client, base_url: &url, layout: &layout };
         let idx = reg.index(true).await.expect("signed index");
         let entry = idx.index.modules.iter().find(|m| m.name == name).unwrap().clone();
         let manifest = reg.manifest(&entry).await.expect("manifest");
-        let id = service_id(name, &entry.latest);
-        let result =
-            modules::install(&st.client, &layout, &manifest, &entry.latest, |sp| st.port_for(&id, sp), |_, _, _| {}).await;
+        let version = version.unwrap_or(&entry.latest).to_string();
+        let id = service_id(name, &version);
+        let result = modules::install(&st.client, &layout, &manifest, &version, |sp| st.port_for(&id, sp), |_, _, _| {}).await;
         if let Err(e) = result {
-            let log = std::fs::read_to_string(layout.logs().join(format!("{name}-{}.log", entry.latest))).unwrap_or_default();
+            let log = std::fs::read_to_string(layout.logs().join(format!("{name}-{version}.log"))).unwrap_or_default();
             let tail: Vec<&str> = log.lines().rev().take(40).collect();
             panic!("install {name}: {e:?}\n{}", tail.into_iter().rev().collect::<Vec<_>>().join("\n"));
         }
@@ -230,6 +259,90 @@ mod e2e {
             assert!(!st.layout().module_dir(&n, &v).exists());
             assert!(!st.layout().socket_dir(&n, &v).exists());
         }
+    }
+
+    /// `www/<name>` is served at `<name>.test` (PHP through PHP-FPM), and a
+    /// project added while nginx runs is picked up by `apply_vhosts`.
+    #[tokio::test]
+    #[ignore]
+    async fn project_vhosts_serve_php() {
+        if std::env::var_os("STACKYARD_E2E_REGISTRY").is_none() {
+            return;
+        }
+        let tmp = tempfile::tempdir().unwrap();
+        let st = state(tmp.path());
+        st.layout().ensure().unwrap();
+        let layout = st.layout();
+        let nginx = install(&st, "nginx").await;
+        let php = install(&st, "php").await;
+        // Like an install from the registry before the vhost include existed.
+        let (n, v) = paths::parse_service_id(&nginx).unwrap();
+        let mut old = modules::load_installed(&layout, &n, &v).unwrap();
+        let tpl = old.config_templates.get_mut("nginx.conf").unwrap();
+        let start = tpl.find("\n    # Projects").expect("include in template");
+        tpl.replace_range(start..tpl.rfind('}').unwrap(), "\n");
+        assert!(!projects::supports_vhosts(&old));
+        modules::save_installed(&layout, &old).unwrap();
+        modules::write_configs(&layout, &old, Some(8080), true).unwrap();
+
+        std::fs::create_dir_all(layout.www().join("toko/public")).unwrap();
+        std::fs::write(layout.www().join("toko/public/index.php"), "<?php echo 'php:' . $_SERVER['HTTP_HOST'] . '@' . PHP_MAJOR_VERSION . '.' . PHP_MINOR_VERSION . ($_SERVER['HTTPS'] ?? '');").unwrap();
+        for id in [&php, &nginx] {
+            commands::start_service_inner(&st, id).await.expect("start");
+        }
+        tokio::time::sleep(Duration::from_millis(800)).await;
+
+        let client = reqwest::Client::new();
+        let get = |host: &'static str, path: &'static str| {
+            let client = client.clone();
+            async move {
+                let r = client.get(format!("http://127.0.0.1:8080{path}")).header("Host", host).send().await.unwrap();
+                (r.status().as_u16(), r.text().await.unwrap())
+            }
+        };
+        assert!(projects::supports_vhosts(&modules::load_installed(&layout, &n, &v).unwrap()), "include added on start");
+        assert_eq!(get("toko.test", "/").await, (200, "php:toko.test@8.4".into()), "front controller via PHP-FPM");
+        assert_eq!(get("toko.test", "/some/route?x=1").await.1, "php:toko.test@8.4", "pretty URLs reach index.php");
+        assert!(get("localhost", "/").await.1.contains("It works!"), "localhost still serves www/");
+
+        projects::create(&layout, "blog").unwrap();
+        commands::apply_vhosts(&st).await.unwrap();
+        tokio::time::sleep(Duration::from_millis(800)).await;
+        assert!(get("blog.test", "/").await.1.contains("<h1>blog.test</h1>"), "new project served after restart");
+
+        // Per-project PHP: toko on 8.3 while 8.4 keeps serving the others.
+        let php83 = install_version(&st, "php", Some("8.3.32")).await;
+        st.update_settings(|s| {
+            s.project_php.insert("toko".into(), "8.3".into());
+            Ok(())
+        })
+        .unwrap();
+        commands::apply_vhosts(&st).await.unwrap();
+        let port_of = |id: &str| {
+            let (n, v) = paths::parse_service_id(id).unwrap();
+            st.port_for(id, modules::load_installed(&layout, &n, &v).unwrap().service.as_ref().unwrap()).unwrap()
+        };
+        assert_ne!(port_of(&php83), port_of(&php), "8.3 moved to its own port");
+        commands::start_service_inner(&st, &php83).await.expect("start php 8.3");
+        tokio::time::sleep(Duration::from_millis(800)).await;
+        assert_eq!(get("toko.test", "/").await.1, "php:toko.test@8.3");
+
+        // HTTPS: the local CA signs the projects' certificate; nginx adds 8443.
+        let ca = tls::ensure_ca(&layout).unwrap();
+        commands::apply_vhosts(&st).await.unwrap();
+        tokio::time::sleep(Duration::from_millis(800)).await;
+        let root = reqwest::Certificate::from_pem(&std::fs::read(&ca).unwrap()).unwrap();
+        let https = reqwest::Client::builder()
+            .tls_built_in_root_certs(false)
+            .add_root_certificate(root)
+            .resolve("toko.test", "127.0.0.1:8443".parse().unwrap())
+            .build()
+            .unwrap();
+        let body = https.get("https://toko.test:8443/").send().await.expect("TLS verified by the CA").text().await.unwrap();
+        assert_eq!(body, "php:toko.test:8443@8.3on", "HTTPS reaches PHP with HTTPS=on");
+        assert_eq!(get("toko.test", "/").await.1, "php:toko.test@8.3", "plain HTTP still served");
+
+        st.supervisor.stop_all().await;
     }
 
     /// Node.js and Python: the default version's tools run through `<data>/bin`.

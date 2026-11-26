@@ -4,8 +4,8 @@
   "license": "PHP-3.01",
   "homepage": "https://www.php.net",
   "description": {
-    "en": "PHP runtime (PHP-FPM), multi-version",
-    "id": "Runtime PHP (PHP-FPM), multi-versi"
+    "en": "PHP runtime (PHP-FPM; FastCGI on Windows), multi-version",
+    "id": "Runtime PHP (PHP-FPM; FastCGI di Windows), multi-versi"
   },
   "versions": [
     {
@@ -30,6 +30,11 @@
           "url": "https://dl.static-php.dev/static-php-cli/common/php-8.4.23-fpm-macos-aarch64.tar.gz",
           "sha256": "038ea93f7ec17d125ddb09c68d099e72d68c5ee4c235048fe5fe2f720de6484f",
           "format": "tar.gz"
+        },
+        "windows-x64": {
+          "url": "https://downloads.php.net/~windows/releases/archives/php-8.4.23-nts-Win32-vs17-x64.zip",
+          "sha256": "826efa189b21f46314ad497ff31467de9f0953292f42b235542be4feea182b48",
+          "format": "zip"
         }
       }
     },
@@ -55,6 +60,11 @@
           "url": "https://dl.static-php.dev/static-php-cli/common/php-8.3.32-fpm-macos-aarch64.tar.gz",
           "sha256": "3164721ae2dd6615048180c44f63bede09ba42060c73d2027af8150d2ebbd0f6",
           "format": "tar.gz"
+        },
+        "windows-x64": {
+          "url": "https://downloads.php.net/~windows/releases/archives/php-8.3.32-nts-Win32-vs16-x64.zip",
+          "sha256": "67c724e7b675b50d8f0476d816c3e2a3064ce3a53d572575d63c321cc0a3a6cf",
+          "format": "zip"
         }
       }
     }
@@ -68,10 +78,23 @@
       "-c",
       "{{conf}}/php.ini"
     ],
-    "default_port": 9000
+    "start_windows": [
+      "{{bin}}/php-cgi.exe",
+      "-b",
+      "127.0.0.1:{{port}}",
+      "-c",
+      "{{conf}}/php.ini"
+    ],
+    "default_port": 9000,
+    "env": {
+      "PHP_FCGI_MAX_REQUESTS": "0"
+    }
   },
   "config_templates": {
     "php-fpm.conf": "[global]\npid = {{run}}/php-fpm.pid\nerror_log = {{logs}}/php-{{version}}-fpm.log\ndaemonize = no\n\n[www]\nlisten = 127.0.0.1:{{port}}\npm = dynamic\npm.max_children = 5\npm.start_servers = 2\npm.min_spare_servers = 1\npm.max_spare_servers = 3\ncatch_workers_output = yes\n",
     "php.ini": "memory_limit = 256M\nupload_max_filesize = 64M\npost_max_size = 64M\nmax_execution_time = 120\ndisplay_errors = On\nerror_reporting = E_ALL\nlog_errors = On\nerror_log = {{logs}}/php-{{version}}-error.log\ndate.timezone = UTC\n"
+  },
+  "config_templates_windows": {
+    "php.ini": "memory_limit = 256M\nupload_max_filesize = 64M\npost_max_size = 64M\nmax_execution_time = 120\ndisplay_errors = On\nerror_reporting = E_ALL\nlog_errors = On\nerror_log = {{logs}}/php-{{version}}-error.log\ndate.timezone = UTC\n\n; Windows builds load extensions from DLLs next to php-cgi.exe.\nextension_dir = \"{{prefix}}/ext\"\nextension=bz2\nextension=curl\nextension=exif\nextension=fileinfo\nextension=gd\nextension=intl\nextension=mbstring\nextension=mysqli\nextension=openssl\nextension=pdo_mysql\nextension=pdo_pgsql\nextension=pdo_sqlite\nextension=pgsql\nextension=sockets\nextension=sodium\nextension=sqlite3\nextension=zip\nzend_extension=opcache\n"
   }
 }

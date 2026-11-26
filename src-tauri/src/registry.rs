@@ -49,6 +49,9 @@ pub struct ModuleManifest {
     pub service: Option<ServiceSpec>,
     #[serde(default)]
     pub config_templates: BTreeMap<String, String>,
+    /// Replaces `config_templates` on Windows (e.g. php.ini loading extension DLLs).
+    #[serde(default)]
+    pub config_templates_windows: Option<BTreeMap<String, String>>,
     /// Install-time step run inside the module (e.g. `pip install`).
     #[serde(default)]
     pub setup: Option<InitSpec>,
@@ -73,6 +76,14 @@ pub struct ModuleManifest {
 
 impl ModuleManifest {
     /// Shims for the platform the app runs on.
+    pub fn platform_templates(&self) -> &BTreeMap<String, String> {
+        if cfg!(windows) {
+            self.config_templates_windows.as_ref().unwrap_or(&self.config_templates)
+        } else {
+            &self.config_templates
+        }
+    }
+
     pub fn platform_shims(&self) -> &BTreeMap<String, String> {
         if cfg!(windows) {
             self.shims_windows.as_ref().unwrap_or(&self.shims)
@@ -144,6 +155,9 @@ pub struct ServiceSpec {
     /// Present for databases: a random root password is generated at init.
     #[serde(default)]
     pub credentials: Option<CredentialSpec>,
+    /// Extra environment variables (values may contain `{{var}}`).
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub env: BTreeMap<String, String>,
 }
 
 /// `files` are rendered (with `{{password}}`) into a private temp folder,
@@ -265,10 +279,22 @@ fn validate_manifest(m: &ModuleManifest, expected_name: &str) -> AppResult<()> {
         }
     }
     let steps = || m.service.iter().flat_map(|s| s.init.iter()).chain(m.setup.iter());
-    for file in m.config_templates.keys().chain(steps().flat_map(|i| i.files.keys())) {
+    let templates = m.config_templates.keys().chain(m.config_templates_windows.iter().flat_map(|t| t.keys()));
+    for file in templates.chain(steps().flat_map(|i| i.files.keys())) {
         if !is_plain_file_name(file) {
             return Err(AppError::InvalidInput("template name".into()));
         }
+    }
+    // Plain variable names; never the loader's (LD_PRELOAD, DYLD_*…) or PATH.
+    let env_ok = |k: &String| {
+        !k.is_empty()
+            && k.chars().all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_')
+            && !k.starts_with("LD_")
+            && !k.starts_with("DYLD_")
+            && k != "PATH"
+    };
+    if !m.service.iter().flat_map(|s| s.env.keys()).all(env_ok) {
+        return Err(AppError::InvalidInput("service env".into()));
     }
     if m.module_files.keys().any(|f| f.is_empty() || !is_safe_relative(f)) {
         return Err(AppError::InvalidInput("module file".into()));

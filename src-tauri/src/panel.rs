@@ -107,6 +107,7 @@ mod tests {
             start_windows: None,
             default_port: Some(port),
             init: None,
+            env: Default::default(),
             credentials: user.map(|u| CredentialSpec { user: u.into() }),
         }
     }
