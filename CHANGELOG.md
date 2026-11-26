@@ -26,6 +26,8 @@ Cara menulis:
 
 ## [Belum dirilis]
 
+## [0.5.1] - 2026-11-26
+
 ### Diperbaiki
 
 - Catatan perubahan kini mengikuti bahasa aplikasi dan lebih ringkas.

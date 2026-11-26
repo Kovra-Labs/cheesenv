@@ -5,6 +5,8 @@ Keep both files in step: same versions, same entries.
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-11-26
+
 ### Fixed
 
 - The changelog now follows the app language and is easier to read.
