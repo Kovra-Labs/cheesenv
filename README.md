@@ -314,7 +314,12 @@ Installed apps check `latest.json` on GitHub Releases at startup (can be turned 
 | minor (`0.5.0`) | new features that keep working with the previous version | `npm version minor` |
 | patch (`0.4.1`) | bug fixes and small tweaks | `npm version patch` |
 
-**Changelog.** Every change users notice goes into [`CHANGELOG.md`](CHANGELOG.md) under `## [Belum dirilis]`, grouped as `### Ditambahkan`, `### Diubah`, `### Diperbaiki`, `### Dihapus` (also `### Keamanan`, `### Usang`). The app shows these entries:
+**Changelog.** The changelog comes in two editions with the same versions and entries: [`CHANGELOG.md`](CHANGELOG.md) (Indonesian) and [`CHANGELOG.en.md`](CHANGELOG.en.md) (English). Every change users notice goes into both, as one short, non-technical line:
+
+- `CHANGELOG.md`: under `## [Belum dirilis]`, grouped as `### Ditambahkan`, `### Diubah`, `### Diperbaiki`, `### Dihapus` (also `### Keamanan`, `### Usang`);
+- `CHANGELOG.en.md`: under `## [Unreleased]`, grouped as `### Added`, `### Changed`, `### Fixed`, `### Removed` (also `### Security`, `### Deprecated`).
+
+The app shows the edition that matches its language setting:
 
 - before installing an update: every version between the installed one and the new one;
 - once after updating: "What's new";
@@ -324,12 +329,13 @@ Installed apps check `latest.json` on GitHub Releases at startup (can be turned 
 
 ```bash
 git status                 # commit everything first: CI builds the tagged commit
-npm version minor          # fails if "Belum dirilis" is empty; otherwise moves it to a
-                           # dated section, bumps package.json + Cargo.toml, commits, tags
+npm version minor          # fails if either unreleased section is empty; otherwise moves
+                           # both to a dated section, bumps package.json + Cargo.toml,
+                           # commits, tags
 git push --follow-tags     # triggers the Release workflow (Windows, macOS, Linux)
 ```
 
-The workflow (about 15–25 minutes) stops early if the tag has no changelog section. It creates a **draft release** with every installer plus `latest.json`. The release page text is that version's changelog section; `latest.json` carries the full history, so apps that skipped versions see all of them. Review the draft, then click **Publish** — installed apps see the new version from that moment.
+The workflow (about 15–25 minutes) stops early if the tag has no section in either edition, or the editions list different versions. It creates a **draft release** with every installer plus `latest.json`. The release page text is that version's section in both languages; `latest.json` carries the full history (`notes` in Indonesian, which apps up to 0.5.0 read, and `notes_i18n` per language), so apps that skipped versions see all of them. Review the draft, then click **Publish** — installed apps see the new version from that moment.
 
 For a local build without tagging, bump the version only: `npm version 0.3.0 --no-git-tag-version` (the changelog is left alone). Always bump the version before a new build; two builds with the same version number are hard to tell apart.
 

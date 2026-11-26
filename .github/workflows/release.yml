@@ -2,8 +2,9 @@ name: Release
 
 # Push a tag like v0.2.0 (see README "Releases & auto-update"). The release is
 # created as a draft; publishing it makes the update visible to installed apps.
-# Its text comes from CHANGELOG.md: the tag's section on the release page, and
-# every released section in latest.json, which the app shows before updating.
+# Its text comes from CHANGELOG.md and CHANGELOG.en.md: the tag's section in
+# both languages on the release page, and every released section in
+# latest.json, which the app shows (in its language) before updating.
 on:
   push:
     tags: ['v*']
@@ -21,16 +22,14 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Release notes from CHANGELOG.md
+      - name: Release notes from the changelog
         id: body
         run: |
           version="${GITHUB_REF_NAME#v}"
           node scripts/changelog.mjs check "$version"
           {
             echo 'body<<STACKYARD_NOTES_EOF'
-            node scripts/changelog.mjs section "$version"
-            echo
-            echo 'Unduh installer untuk sistem operasi kamu di bagian **Assets**.'
+            node scripts/changelog.mjs body "$version"
             echo 'STACKYARD_NOTES_EOF'
           } >> "$GITHUB_OUTPUT"
 

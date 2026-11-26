@@ -46,48 +46,68 @@ function fmtDate(date: string | null) {
 <style scoped>
 .changelog {
   display: grid;
-  gap: 18px;
+  gap: 20px;
 }
 
 .release {
   display: grid;
-  gap: 10px;
+  gap: 12px;
 }
 
 .release + .release {
-  padding-top: 16px;
+  padding-top: 18px;
   border-top: 1px solid var(--line);
 }
 
 header {
   display: flex;
   align-items: baseline;
-  gap: 10px;
+  justify-content: space-between;
+  gap: 12px;
 }
 
 h3 {
   font-size: 15px;
 }
 
+/* Kind on the left, its changes on the right; stacked when narrow. */
 .group {
   display: grid;
-  gap: 6px;
-  justify-items: start;
+  grid-template-columns: 116px 1fr;
+  align-items: start;
+  gap: 4px 14px;
+}
+
+.badge {
+  justify-self: start;
+  margin-top: 1px;
 }
 
 ul {
   display: grid;
-  gap: 4px;
+  gap: 6px;
   margin: 0;
-  padding-left: 20px;
+  padding-left: 18px;
   color: var(--ink-2);
+  line-height: 1.55;
+}
+
+li::marker {
+  color: var(--ink-3);
 }
 
 code {
-  padding: 1px 5px;
+  padding: 0 5px;
   border-radius: 4px;
   background: var(--code-bg);
   color: var(--code-ink);
-  font-size: 0.9em;
+  font-size: 0.88em;
+  white-space: nowrap;
+}
+
+@media (max-width: 560px) {
+  .group {
+    grid-template-columns: 1fr;
+  }
 }
 </style>
