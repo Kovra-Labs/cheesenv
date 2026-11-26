@@ -16,6 +16,10 @@ const createDialog = ref<HTMLDialogElement | null>(null);
 const newName = ref('');
 const creating = ref(false);
 
+const enablingHttps = ref(false);
+const browserHint = ref(false);
+const grantingPorts = ref<string | null>(null);
+
 const LABEL = /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/;
 const nameValid = computed(() => LABEL.test(newName.value));
 
@@ -25,6 +29,18 @@ const outdated = computed(() => servers.value.filter((s) => !s.vhosts));
 /** The server `open_project` uses: the first running one with vhost support. */
 const serving = computed(() => readyServers.value.find((s) => s.running) ?? null);
 const hasDomains = computed(() => view.value?.projects.some((p) => p.domain) ?? false);
+const phps = computed(() => view.value?.php ?? []);
+/** One choice per release line (the newest of each). */
+const phpLines = computed(() => phps.value.filter((p, i, all) => all.findIndex((x) => x.line === p.line) === i));
+/** PHP versions projects use that are stopped while a web server serves them. */
+const stoppedPhp = computed(() => {
+  if (!serving.value) return [];
+  const used = new Set(view.value?.projects.map((p) => p.php));
+  return phps.value.filter((p) => used.has(p.id) && !p.running);
+});
+/** Linux nginx still on 8080 because it may not bind ports 80/443. */
+const lowPortServers = computed(() => readyServers.value.filter((s) => s.low_ports === false));
+const tlsReady = computed(() => !!view.value?.tls.enabled && view.value.tls.trusted);
 
 async function load() {
   loading.value = true;
@@ -68,6 +84,48 @@ async function create() {
     toast(errorText(e), 'error');
   } finally {
     creating.value = false;
+  }
+}
+
+async function setPhp(name: string, line: string | null) {
+  try {
+    view.value = await api.setProjectPhp(name, line);
+    const php = view.value.projects.find((p) => p.name === name)?.php;
+    const version = phps.value.find((p) => p.id === php)?.version ?? '';
+    toast(t('projects.phpChanged', { name, version }));
+    await reloadServices();
+  } catch (e) {
+    toast(errorText(e), 'error');
+    await load();
+  }
+}
+
+async function enableHttps() {
+  enablingHttps.value = true;
+  try {
+    const trust = await api.enableHttps();
+    browserHint.value = trust.tool_missing;
+    toast(trust.imported ? t('projects.httpsBrowsersDone', { count: trust.imported }) : t('projects.httpsEnabled'));
+    await load();
+  } catch (e) {
+    toast(errorText(e), 'error');
+    await load();
+  } finally {
+    enablingHttps.value = false;
+  }
+}
+
+async function enableLowPorts(id: string, name: string) {
+  grantingPorts.value = id;
+  try {
+    await api.enableLowPorts(id);
+    toast(t('projects.lowPortsDone', { name }));
+    await reloadServices();
+    await load();
+  } catch (e) {
+    toast(errorText(e), 'error');
+  } finally {
+    grantingPorts.value = null;
   }
 }
 
@@ -125,7 +183,20 @@ onMounted(load);
           <AppIcon name="play" />{{ t('projects.startServer', { name: s.name }) }}
         </button>
       </div>
-      <div v-if="servers.length && !view.php" class="alert info">
+      <div v-for="p in stoppedPhp" :key="p.id" class="alert info">
+        <AppIcon name="info" />
+        <span class="spacer">{{ t('projects.phpStopped', { version: p.version }) }}</span>
+        <button class="btn sm" @click="startServer(p.id)"><AppIcon name="play" />{{ t('projects.startPhp', { version: p.version }) }}</button>
+      </div>
+      <div v-for="s in lowPortServers" :key="`low-${s.id}`" class="alert info">
+        <AppIcon name="info" />
+        <span class="spacer">{{ t('projects.lowPorts', { name: s.name, port: s.port }) }}</span>
+        <button class="btn sm" :disabled="grantingPorts !== null" @click="enableLowPorts(s.id, s.name)">
+          <AppIcon :name="grantingPorts === s.id ? 'restart' : 'shield'" :class="{ spin: grantingPorts === s.id }" />
+          {{ grantingPorts === s.id ? t('projects.hostsSyncing') : t('projects.lowPortsEnable') }}
+        </button>
+      </div>
+      <div v-if="servers.length && !phps.length" class="alert info">
         <AppIcon name="info" />
         <span>{{ t('projects.noPhp') }}</span>
       </div>
@@ -149,7 +220,31 @@ onMounted(load);
         </div>
       </div>
 
-      <p v-if="serving" class="hint">{{ t('projects.servedBy', { name: serving.name, port: serving.port }) }}</p>
+      <div v-if="readyServers.length && !tlsReady" class="card tls">
+        <div class="row">
+          <span class="tile https"><AppIcon name="lock" /></span>
+          <div class="spacer">
+            <strong>{{ t('projects.httpsTitle') }}</strong>
+            <p class="hint">{{ view.tls.enabled ? t('projects.httpsUntrusted') : t('projects.httpsOff') }}</p>
+          </div>
+          <button class="btn primary" :disabled="enablingHttps" @click="enableHttps">
+            <AppIcon :name="enablingHttps ? 'restart' : 'shield'" :class="{ spin: enablingHttps }" />
+            {{ enablingHttps ? t('projects.hostsSyncing') : view.tls.enabled ? t('projects.httpsTrust') : t('projects.httpsEnable') }}
+          </button>
+        </div>
+      </div>
+      <div v-if="browserHint" class="alert">
+        <AppIcon name="alert" />
+        <span class="spacer">{{ t('projects.httpsBrowsers') }}</span>
+      </div>
+
+      <p v-if="serving" class="hint">
+        {{
+          serving.https_port
+            ? t('projects.servedByHttps', { name: serving.name, port: serving.port, https: serving.https_port })
+            : t('projects.servedBy', { name: serving.name, port: serving.port })
+        }}
+      </p>
 
       <TransitionGroup v-if="view.projects.length" tag="section" name="list" class="list">
         <article v-for="p in view.projects" :key="p.name" class="card project">
@@ -163,6 +258,18 @@ onMounted(load);
             </div>
             <p v-if="p.domain" class="hint mono path">{{ p.path }}</p>
             <p v-else class="bad-name">{{ t('projects.invalidName') }}</p>
+            <label v-if="p.domain && phps.length" class="php-pick">
+              <span class="label">{{ t('projects.php') }}</span>
+              <select
+                class="select"
+                :value="p.php_missing ? '' : (p.php_line ?? '')"
+                @change="setPhp(p.name, ($event.target as HTMLSelectElement).value || null)"
+              >
+                <option value="">{{ t('projects.phpDefault', { version: phps[0].version }) }}</option>
+                <option v-for="php in phpLines" :key="php.line" :value="php.line">PHP {{ php.version }}</option>
+              </select>
+            </label>
+            <p v-if="p.php_missing" class="bad-name">{{ t('projects.phpMissing', { line: p.php_line }) }}</p>
           </div>
           <div class="row">
             <button class="btn" @click="openTerminal(p.name)"><AppIcon name="terminal" />{{ t('nav.terminal') }}</button>
@@ -267,6 +374,34 @@ onMounted(load);
 .bad-name {
   color: var(--warn);
   font-size: 13.5px;
+}
+
+.php-pick {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.php-pick .label {
+  color: var(--ink-2);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.php-pick .select {
+  height: 32px;
+  padding: 0 8px;
+  font-size: 13px;
+}
+
+.tls {
+  padding: 16px 18px;
+}
+
+.tile.https {
+  background: var(--primary-soft);
+  color: var(--primary-text);
 }
 
 .hosts {

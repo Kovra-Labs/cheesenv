@@ -72,10 +72,10 @@ pub fn save_installed(layout: &Layout, m: &InstalledModule) -> AppResult<()> {
 }
 
 /// Default port; on macOS/Linux privileged ports fall back to +8000
-/// (80 → 8080, 443 → 8443) until the admin helper exists (PRD §7).
-pub fn default_port(spec: &ServiceSpec) -> Option<u16> {
+/// (80 → 8080, 443 → 8443) unless the program may bind them (PRD §7).
+pub fn default_port(spec: &ServiceSpec, low_ports_granted: impl FnOnce() -> bool) -> Option<u16> {
     spec.default_port.map(|p| {
-        if cfg!(unix) && p < 1024 {
+        if cfg!(unix) && p < 1024 && !low_ports_granted() {
             p + 8000
         } else {
             p
@@ -186,7 +186,7 @@ pub async fn install(
         category: manifest.category.clone(),
         bin_dir: asset.bin_dir.clone(),
         service: manifest.service.clone(),
-        config_templates: manifest.config_templates.clone(),
+        config_templates: manifest.platform_templates().clone(),
         panel: manifest.panel.clone(),
         shims: manifest.platform_shims().clone(),
         installed_at: unix_now(),

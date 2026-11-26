@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "updated": "2026-11-26T02:10:46.990Z",
+  "updated": "2026-11-26T03:04:17.579Z",
   "modules": [
     {
       "name": "apache",
@@ -96,11 +96,11 @@
       "name": "php",
       "category": "runtime",
       "description": {
-        "en": "PHP runtime (PHP-FPM), multi-version",
-        "id": "Runtime PHP (PHP-FPM), multi-versi"
+        "en": "PHP runtime (PHP-FPM; FastCGI on Windows), multi-version",
+        "id": "Runtime PHP (PHP-FPM; FastCGI di Windows), multi-versi"
       },
       "latest": "8.4.23",
-      "manifest_sha256": "dfaf5727f414e6bb611872f2a66b34ea617c911503a52df2993cf5e02cdd4cff",
+      "manifest_sha256": "dfcb7b359b05f68546ea3b64641a7ddd0b159c5b35b876e0a7a558bb7051475e",
       "license": "PHP-3.01",
       "homepage": "https://www.php.net"
     },

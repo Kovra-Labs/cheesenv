@@ -1,23 +1,20 @@
 //! `.test` domains in the system hosts file (PRD §7 local domains).
 //!
 //! Stackyard only ever owns one marked block, holding `127.0.0.1 <name>.test`
-//! lines. Writing it needs administrator rights, so the app re-runs its own
-//! binary elevated in a tiny helper mode (`--hosts-sync <domains…>`) that
-//! re-validates every name and touches nothing outside the block.
+//! lines. Writing it needs administrator rights: the elevated helper
+//! (`--hosts-sync <domains…>`, see admin.rs) re-validates every name and
+//! touches nothing outside the block.
 
 use std::collections::BTreeSet;
 use std::path::PathBuf;
 
+use crate::admin::{self, EXIT_INVALID, EXIT_IO};
 use crate::error::{AppError, AppResult};
 use crate::projects::is_valid_domain;
 
 pub const HELPER_FLAG: &str = "--hosts-sync";
 const BEGIN: &str = "# BEGIN Stackyard (managed automatically, do not edit)";
 const END: &str = "# END Stackyard";
-
-/// Helper exit codes.
-const EXIT_INVALID: i32 = 2;
-const EXIT_IO: i32 = 3;
 
 pub fn hosts_path() -> PathBuf {
     if cfg!(windows) {
@@ -82,16 +79,12 @@ pub fn in_sync(domains: &BTreeSet<String>) -> bool {
     std::fs::read_to_string(hosts_path()).is_ok_and(|c| &managed(&c) == domains)
 }
 
-/// Entry point of the elevated helper: `stackyard --hosts-sync a.test b.test`.
-/// Returns `None` when the process was not started as the helper.
-pub fn helper_main(args: &[String]) -> Option<i32> {
-    if args.get(1).map(String::as_str) != Some(HELPER_FLAG) {
-        return None;
-    }
-    let domains: BTreeSet<String> = args[2..].iter().cloned().collect();
+/// Elevated helper job: `stackyard --hosts-sync a.test b.test`.
+pub fn helper(args: &[String]) -> i32 {
+    let domains: BTreeSet<String> = args.iter().cloned().collect();
     if domains.len() > 1000 || !domains.iter().all(|d| is_valid_domain(d)) {
         eprintln!("stackyard: invalid domain list");
-        return Some(EXIT_INVALID);
+        return EXIT_INVALID;
     }
     let path = hosts_path();
     let result = (|| -> std::io::Result<()> {
@@ -107,65 +100,13 @@ pub fn helper_main(args: &[String]) -> Option<i32> {
         // Written in place (not renamed) so ownership, mode and SELinux labels stay.
         std::fs::write(&path, updated)
     })();
-    Some(match result {
+    match result {
         Ok(()) => 0,
         Err(e) => {
             eprintln!("stackyard: {}: {e}", path.display());
             EXIT_IO
         }
-    })
-}
-
-/// The program to re-run elevated: inside an AppImage, the AppImage itself
-/// (its mount point is not readable by root).
-fn self_exe() -> AppResult<PathBuf> {
-    if let Some(appimage) = std::env::var_os("APPIMAGE").map(PathBuf::from).filter(|p| p.is_file()) {
-        return Ok(appimage);
     }
-    std::env::current_exe().map_err(AppError::from)
-}
-
-#[cfg(target_os = "macos")]
-fn elevated_command(exe: &std::path::Path, domains: &BTreeSet<String>) -> tokio::process::Command {
-    // Domains are validated labels (no quoting needed); the path is shell-quoted,
-    // then escaped for the AppleScript string literal.
-    let shell_quote = |s: &str| format!("'{}'", s.replace('\'', "'\\''"));
-    let mut line = format!("{} {HELPER_FLAG}", shell_quote(&exe.to_string_lossy()));
-    for d in domains {
-        line.push(' ');
-        line.push_str(d);
-    }
-    let script = format!(
-        "do shell script \"{}\" with prompt \"Stackyard needs to update the hosts file for your .test domains.\" with administrator privileges",
-        line.replace('\\', "\\\\").replace('"', "\\\"")
-    );
-    let mut cmd = tokio::process::Command::new("/usr/bin/osascript");
-    cmd.arg("-e").arg(script);
-    cmd
-}
-
-#[cfg(windows)]
-fn elevated_command(exe: &std::path::Path, domains: &BTreeSet<String>) -> tokio::process::Command {
-    let quote = |s: &str| format!("'{}'", s.replace('\'', "''"));
-    let list = std::iter::once(quote(HELPER_FLAG))
-        .chain(domains.iter().map(|d| quote(d)))
-        .collect::<Vec<_>>()
-        .join(",");
-    let script = format!(
-        "try {{ $p = Start-Process -FilePath {} -ArgumentList @({list}) -Verb RunAs -Wait -PassThru -WindowStyle Hidden; exit $p.ExitCode }} catch {{ exit 1223 }}",
-        quote(&exe.to_string_lossy())
-    );
-    let mut cmd = tokio::process::Command::new("powershell.exe");
-    cmd.args(["-NoProfile", "-NonInteractive", "-Command", &script]);
-    cmd.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
-    cmd
-}
-
-#[cfg(all(unix, not(target_os = "macos")))]
-fn elevated_command(exe: &std::path::Path, domains: &BTreeSet<String>) -> tokio::process::Command {
-    let mut cmd = tokio::process::Command::new("pkexec");
-    cmd.arg(exe).arg(HELPER_FLAG).args(domains);
-    cmd
 }
 
 /// Writes Stackyard's hosts block through the elevated helper (one admin prompt).
@@ -176,20 +117,12 @@ pub async fn sync_elevated(domains: &BTreeSet<String>) -> AppResult<()> {
     if in_sync(domains) {
         return Ok(());
     }
-    let exe = self_exe()?;
-    let out = elevated_command(&exe, domains)
-        .stdin(std::process::Stdio::null())
-        .output()
-        .await
-        .map_err(|e| AppError::Spawn(format!("admin prompt: {e}")))?;
-    let code = out.status.code();
-    let stderr = String::from_utf8_lossy(&out.stderr);
-    // pkexec: 126 dismissed / 127 not authorized; osascript: -128 user cancelled; UAC: 1223.
-    let cancelled = matches!(code, Some(126 | 127 | 1223)) || stderr.contains("-128");
-    match code {
-        Some(0) if in_sync(domains) => Ok(()),
-        _ if cancelled => Err(AppError::AuthCancelled),
-        _ => Err(AppError::Spawn(format!("hosts helper exited with {code:?}: {}", stderr.trim()))),
+    let args: Vec<String> = std::iter::once(HELPER_FLAG.to_string()).chain(domains.iter().cloned()).collect();
+    admin::run_elevated(&args, "Stackyard needs to update the hosts file for your .test domains.").await?;
+    if in_sync(domains) {
+        Ok(())
+    } else {
+        Err(AppError::Spawn("hosts file was not updated".into()))
     }
 }
 
@@ -231,11 +164,9 @@ mod tests {
     }
 
     #[test]
-    fn helper_rejects_bad_names_and_ignores_other_args() {
+    fn helper_rejects_bad_names() {
         let args = |v: &[&str]| v.iter().map(|s| s.to_string()).collect::<Vec<_>>();
-        assert_eq!(helper_main(&args(&["stackyard"])), None);
-        assert_eq!(helper_main(&args(&["stackyard", "--other"])), None);
-        assert_eq!(helper_main(&args(&["stackyard", HELPER_FLAG, "bank.com"])), Some(EXIT_INVALID));
-        assert_eq!(helper_main(&args(&["stackyard", HELPER_FLAG, "a.test\n1.2.3.4 x.test"])), Some(EXIT_INVALID));
+        assert_eq!(admin::helper_main(&args(&["stackyard", HELPER_FLAG, "bank.com"])), Some(EXIT_INVALID));
+        assert_eq!(helper(&args(&["a.test\n1.2.3.4 x.test"])), EXIT_INVALID);
     }
 }

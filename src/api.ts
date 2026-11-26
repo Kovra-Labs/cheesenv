@@ -146,6 +146,12 @@ export interface Project {
   path: string;
   /** Folder served as web root (`public/` when present). */
   doc_root: string;
+  /** PHP service id handling its `.php` files. */
+  php: string | null;
+  /** Chosen PHP release line (`8.3`); null = the newest PHP. */
+  php_line: string | null;
+  /** The chosen line is not installed (the newest PHP serves it meanwhile). */
+  php_missing: boolean;
 }
 
 export interface WebServer {
@@ -153,16 +159,36 @@ export interface WebServer {
   name: string;
   version: string;
   port: number | null;
+  /** HTTPS port of the projects (nginx with HTTPS enabled). */
+  https_port: number | null;
   running: boolean;
-  /** Its config includes Stackyard's vhosts (false for installs from older templates). */
+  /** Its config includes Stackyard's vhosts. */
   vhosts: boolean;
+  /** Linux nginx: may use ports 80/443; null when not applicable. */
+  low_ports: boolean | null;
+}
+
+export interface PhpVersion {
+  id: string;
+  version: string;
+  line: string;
+  port: number | null;
+  running: boolean;
+}
+
+export interface BrowserTrust {
+  databases: number;
+  imported: number;
+  /** Browser profiles exist but NSS certutil is not installed (Linux). */
+  tool_missing: boolean;
 }
 
 export interface ProjectsView {
   projects: Project[];
   servers: WebServer[];
-  /** PHP-FPM service id handling `.php` files, if PHP is installed. */
-  php: string | null;
+  /** Installed PHP versions, newest (the default) first. */
+  php: PhpVersion[];
+  tls: { enabled: boolean; trusted: boolean };
   hosts_synced: boolean;
   hosts_file: string;
   /** Lines to add to the hosts file by hand. */
@@ -232,6 +258,12 @@ export const api = {
   /** Writes the `.test` domains to the hosts file (administrator prompt). */
   syncHosts: () => invoke<void>('sync_hosts'),
   openProject: (name: string) => invoke<void>('open_project', { name }),
+  /** PHP release line for a project (`8.3`), or null for the newest. */
+  setProjectPhp: (name: string, line: string | null) => invoke<ProjectsView>('set_project_php', { name, line }),
+  /** Creates and trusts the local CA (administrator prompt), then serves HTTPS. */
+  enableHttps: () => invoke<BrowserTrust>('enable_https'),
+  /** Linux: lets nginx use ports 80/443 (administrator prompt). */
+  enableLowPorts: (id: string) => invoke<void>('enable_low_ports', { id }),
 
   /** Starts a shell; its output arrives as raw bytes on `onOutput`. */
   terminalOpen: (cols: number, rows: number, project: string | null, onOutput: Channel<ArrayBuffer>) =>

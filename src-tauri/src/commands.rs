@@ -12,7 +12,7 @@ use crate::settings::{ServiceSettings, Settings, SettingsUpdate};
 use crate::state::AppState;
 use crate::supervisor::Status;
 use crate::terminal::Terminals;
-use crate::{hosts, logs, panel, projects, runtimes, terminal, tray};
+use crate::{hosts, logs, panel, projects, runtimes, terminal, tls, tray};
 
 pub const EVENT_SERVICE_STATUS: &str = "service-status";
 pub const EVENT_SERVICES_CHANGED: &str = "services-changed";
@@ -176,7 +176,7 @@ pub async fn registry_module(state: State<'_, AppState>, name: String) -> Cmd<Ma
         name: manifest.name,
         category: manifest.category,
         has_service: manifest.service.is_some(),
-        default_port: manifest.service.as_ref().and_then(modules::default_port),
+        default_port: manifest.service.as_ref().and_then(|s| modules::default_port(s, || false)),
         runtime,
         versions,
     })
@@ -550,9 +550,14 @@ pub async fn start_service_inner(state: &AppState, id: &str) -> AppResult<()> {
     }
     let layout = state.layout();
     if let (true, Some(port)) = (projects::supports_vhosts(&m), port) {
+        let list = projects::list(&layout);
+        if let Some(https) = tls_for(&layout, &m, port, &list).ok().flatten().map(|t| t.port) {
+            if !ports::is_free(https) {
+                return Err(AppError::PortInUse { port: https, suggestion: None });
+            }
+        }
         // Never blocks the server itself: it still serves www/ on localhost.
-        let php = php_port(state);
-        if let Err(e) = projects::write_vhosts(&layout, &m, port, php, &projects::list(&layout)) {
+        if let Err(e) = write_server_vhosts(state, &m, port, &list) {
             eprintln!("[stackyard] vhosts for {id}: {e}");
         }
     }
@@ -806,17 +811,52 @@ pub struct WebServerView {
     name: String,
     version: String,
     port: Option<u16>,
+    /// Port of the projects' HTTPS (nginx, once HTTPS is enabled).
+    https_port: Option<u16>,
     running: bool,
     /// Its config includes Stackyard's vhosts (reinstall older installs).
     vhosts: bool,
+    /// Linux nginx: whether it may use ports 80/443 (`None`: not applicable).
+    low_ports: Option<bool>,
+}
+
+#[derive(Serialize)]
+pub struct PhpView {
+    id: String,
+    version: String,
+    /// Release line projects choose (`8.3`).
+    line: String,
+    port: Option<u16>,
+    running: bool,
+}
+
+#[derive(Serialize)]
+pub struct ProjectView {
+    #[serde(flatten)]
+    project: projects::Project,
+    /// PHP service its `.php` files go to.
+    php: Option<String>,
+    /// Release line chosen for it; `None` = the newest PHP.
+    php_line: Option<String>,
+    /// The chosen line is not installed (the newest PHP serves it meanwhile).
+    php_missing: bool,
+}
+
+#[derive(Serialize)]
+pub struct TlsView {
+    /// HTTPS is on (the local CA exists).
+    enabled: bool,
+    /// The OS trusts the local CA.
+    trusted: bool,
 }
 
 #[derive(Serialize)]
 pub struct ProjectsView {
-    projects: Vec<projects::Project>,
+    projects: Vec<ProjectView>,
     servers: Vec<WebServerView>,
-    /// PHP-FPM service that `.php` files are passed to (newest installed).
-    php: Option<String>,
+    /// Installed PHP versions, newest first (the first is the default).
+    php: Vec<PhpView>,
+    tls: TlsView,
     /// The hosts file lists exactly the projects' domains.
     hosts_synced: bool,
     hosts_file: String,
@@ -831,14 +871,91 @@ fn web_servers(layout: &crate::paths::Layout) -> Vec<InstalledModule> {
         .collect()
 }
 
-fn newest_php(layout: &crate::paths::Layout) -> Option<InstalledModule> {
-    // `list_installed` sorts each module newest first.
-    modules::list_installed(layout).into_iter().find(|m| m.name == "php" && m.service.is_some())
+/// Installed PHP-FPM services, newest first (`list_installed` order).
+fn php_modules(layout: &crate::paths::Layout) -> Vec<InstalledModule> {
+    modules::list_installed(layout).into_iter().filter(|m| m.name == "php" && m.service.is_some()).collect()
 }
 
-fn php_port(state: &AppState) -> Option<u16> {
-    let php = newest_php(&state.layout())?;
-    state.port_for(&service_id(&php.name, &php.version), php.service.as_ref()?)
+/// `8.3.32` → `8.3`.
+fn php_line(version: &str) -> String {
+    version.split('.').take(2).collect::<Vec<_>>().join(".")
+}
+
+/// The PHP serving a project: the newest of its chosen line, else the newest.
+fn php_for<'a>(phps: &'a [InstalledModule], line: Option<&String>) -> Option<&'a InstalledModule> {
+    line.and_then(|l| phps.iter().find(|m| &php_line(&m.version) == l)).or(phps.first())
+}
+
+fn service_port(state: &AppState, m: &InstalledModule) -> Option<u16> {
+    state.port_for(&service_id(&m.name, &m.version), m.service.as_ref()?)
+}
+
+/// Each project with the PHP-FPM port of its PHP version.
+fn sites(state: &AppState, list: &[projects::Project]) -> Vec<projects::Site> {
+    let phps = php_modules(&state.layout());
+    let choice = state.settings().project_php;
+    list.iter()
+        .map(|p| projects::Site {
+            php_port: php_for(&phps, choice.get(&p.name)).and_then(|m| service_port(state, m)),
+            project: p.clone(),
+        })
+        .collect()
+}
+
+/// PHP versions used by projects at the same time need their own ports: one
+/// sharing the port of a newer one in use gets a free port, saved as its port
+/// setting (as if set on the Services page) and restarted when running.
+async fn ensure_php_ports(state: &AppState, list: &[projects::Project]) -> AppResult<()> {
+    let layout = state.layout();
+    let phps = php_modules(&layout);
+    let choice = state.settings().project_php;
+    let mut used: Vec<&InstalledModule> = Vec::new();
+    for p in list {
+        if let Some(m) = php_for(&phps, choice.get(&p.name)) {
+            if !used.iter().any(|u| u.version == m.version) {
+                used.push(m);
+            }
+        }
+    }
+    used.sort_by_key(|m| phps.iter().position(|x| x.version == m.version));
+    let mut taken = std::collections::HashSet::new();
+    for m in used {
+        let Some(port) = service_port(state, m) else { continue };
+        if taken.insert(port) {
+            continue;
+        }
+        let id = service_id(&m.name, &m.version);
+        let reserved = reserved_ports(state, &id);
+        let free = (9001..=9999)
+            .find(|p| !taken.contains(p) && !reserved.contains(p) && ports::is_free(*p))
+            .ok_or(AppError::PortInUse { port, suggestion: None })?;
+        state.update_settings(|s| {
+            let mut cur = s.service(&id);
+            cur.port = Some(free);
+            s.set_service(&id, cur)
+        })?;
+        modules::write_configs(&layout, m, Some(free), true)?;
+        if state.supervisor.is_active(&id).await {
+            state.supervisor.stop(&id).await?;
+            start_service_inner(state, &id).await?;
+        }
+        taken.insert(free);
+    }
+    Ok(())
+}
+
+/// HTTPS settings for web server `m` on HTTP `port`; issues or renews the
+/// projects' certificate as needed. `None` while HTTPS is off (and for Apache,
+/// whose builds lack mod_ssl on Linux and macOS).
+fn tls_for(layout: &crate::paths::Layout, m: &InstalledModule, port: u16, list: &[projects::Project]) -> AppResult<Option<projects::Tls>> {
+    if m.name != "nginx" {
+        return Ok(None);
+    }
+    let (Some(cert), Some(https)) = (tls::site_cert(layout, &projects::domains(list))?, projects::https_port(port)) else {
+        return Ok(None);
+    };
+    let slash = |p: std::path::PathBuf| p.to_string_lossy().replace('\\', "/");
+    Ok(Some(projects::Tls { port: https, cert: slash(cert.cert), key: slash(cert.key) }))
 }
 
 fn find_project(layout: &crate::paths::Layout, name: &str) -> AppResult<projects::Project> {
@@ -855,11 +972,17 @@ fn find_project(layout: &crate::paths::Layout, name: &str) -> AppResult<projects
 fn ensure_vhost_include(state: &AppState, m: &InstalledModule) -> AppResult<Option<InstalledModule>> {
     let Some(updated) = projects::with_vhost_include(m) else { return Ok(None) };
     let layout = state.layout();
-    let id = service_id(&m.name, &m.version);
-    let port = updated.service.as_ref().and_then(|s| state.port_for(&id, s));
+    let port = service_port(state, &updated);
     modules::save_installed(&layout, &updated)?;
     modules::write_configs(&layout, &updated, port, true)?;
     Ok(Some(updated))
+}
+
+/// Writes the vhosts of web server `m` on `port`. Returns whether they changed.
+fn write_server_vhosts(state: &AppState, m: &InstalledModule, port: u16, list: &[projects::Project]) -> AppResult<bool> {
+    let layout = state.layout();
+    let tls = tls_for(&layout, m, port, list)?;
+    projects::write_vhosts(&layout, m, port, tls.as_ref(), &sites(state, list))
 }
 
 /// Rewrites every web server's vhosts and restarts the running ones whose
@@ -867,7 +990,7 @@ fn ensure_vhost_include(state: &AppState, m: &InstalledModule) -> AppResult<Opti
 pub(crate) async fn apply_vhosts(state: &AppState) -> AppResult<()> {
     let layout = state.layout();
     let list = projects::list(&layout);
-    let php = php_port(state);
+    ensure_php_ports(state, &list).await?;
     for m in web_servers(&layout) {
         let migrated = ensure_vhost_include(state, &m)?;
         let m = migrated.clone().unwrap_or(m);
@@ -875,8 +998,8 @@ pub(crate) async fn apply_vhosts(state: &AppState) -> AppResult<()> {
             continue;
         }
         let id = service_id(&m.name, &m.version);
-        let Some(port) = m.service.as_ref().and_then(|s| state.port_for(&id, s)) else { continue };
-        let changed = projects::write_vhosts(&layout, &m, port, php, &list)? || migrated.is_some();
+        let Some(port) = service_port(state, &m) else { continue };
+        let changed = write_server_vhosts(state, &m, port, &list)? || migrated.is_some();
         if changed && state.supervisor.is_active(&id).await {
             state.supervisor.stop(&id).await?;
             start_service_inner(state, &id).await?;
@@ -885,28 +1008,64 @@ pub(crate) async fn apply_vhosts(state: &AppState) -> AppResult<()> {
     Ok(())
 }
 
+async fn is_running(state: &AppState, id: &str) -> bool {
+    state.supervisor.snapshot(id).await.status == Status::Running
+}
+
 async fn projects_view(state: &AppState) -> ProjectsView {
     let layout = state.layout();
     let list = projects::list(&layout);
     let domains: std::collections::BTreeSet<String> = projects::domains(&list).into_iter().collect();
+    let tls_on = tls::enabled(&layout);
     let mut servers = Vec::new();
     for m in web_servers(&layout) {
         let id = service_id(&m.name, &m.version);
+        let port = service_port(state, &m);
         servers.push(WebServerView {
-            port: m.service.as_ref().and_then(|s| state.port_for(&id, s)),
-            running: state.supervisor.snapshot(&id).await.status == Status::Running,
+            https_port: port.filter(|_| tls_on && m.name == "nginx").and_then(projects::https_port),
+            running: is_running(state, &id).await,
             vhosts: projects::supports_vhosts(&m),
+            // Only while the port is the default one (a port set by hand stays as it is).
+            low_ports: (cfg!(target_os = "linux") && m.name == "nginx" && state.settings().service(&id).port.is_none())
+                .then(|| state.program_of(&id).is_some_and(|p| crate::admin::low_ports_granted(&p))),
             name: m.name.clone(),
+            version: m.version.clone(),
+            port,
+            id,
+        });
+    }
+    let phps = php_modules(&layout);
+    let mut php = Vec::new();
+    for m in &phps {
+        let id = service_id(&m.name, &m.version);
+        php.push(PhpView {
+            port: service_port(state, m),
+            running: is_running(state, &id).await,
+            line: php_line(&m.version),
             version: m.version.clone(),
             id,
         });
     }
+    let choice = state.settings().project_php;
+    let projects = list
+        .into_iter()
+        .map(|p| {
+            let line = choice.get(&p.name).cloned();
+            ProjectView {
+                php: php_for(&phps, line.as_ref()).map(|m| service_id(&m.name, &m.version)),
+                php_missing: line.as_ref().is_some_and(|l| !phps.iter().any(|m| &php_line(&m.version) == l)),
+                php_line: line,
+                project: p,
+            }
+        })
+        .collect();
     ProjectsView {
         hosts_synced: hosts::in_sync(&domains),
         hosts_file: hosts::hosts_path().display().to_string(),
         hosts_lines: domains.iter().map(|d| format!("127.0.0.1 {d}")).collect(),
-        php: newest_php(&layout).map(|m| service_id(&m.name, &m.version)),
-        projects: list,
+        tls: TlsView { enabled: tls_on, trusted: tls_on && tls::is_trusted(&layout) },
+        php,
+        projects,
         servers,
     }
 }
@@ -924,6 +1083,36 @@ pub async fn create_project(state: State<'_, AppState>, name: String) -> Cmd<Pro
     Ok(projects_view(&state).await)
 }
 
+/// Chooses the PHP release line (`8.3`) of a project, or the newest (`None`).
+/// The chosen PHP is started when a web server runs, so the site keeps working.
+#[tauri::command]
+pub async fn set_project_php(state: State<'_, AppState>, name: String, line: Option<String>) -> Cmd<ProjectsView> {
+    let layout = state.layout();
+    find_project(&layout, &name)?;
+    let phps = php_modules(&layout);
+    if let Some(l) = &line {
+        if !phps.iter().any(|m| &php_line(&m.version) == l) {
+            return Err(AppError::NotFound(format!("php {l}")));
+        }
+    }
+    state.update_settings(|s| {
+        match &line {
+            Some(l) => s.project_php.insert(name.clone(), l.clone()),
+            None => s.project_php.remove(&name),
+        };
+        Ok(())
+    })?;
+    apply_vhosts(&state).await?;
+    let mut serving = false;
+    for m in web_servers(&layout) {
+        serving |= state.supervisor.is_active(&service_id(&m.name, &m.version)).await;
+    }
+    if let (true, Some(m)) = (serving, php_for(&phps, line.as_ref())) {
+        start_service_inner(&state, &service_id(&m.name, &m.version)).await?;
+    }
+    Ok(projects_view(&state).await)
+}
+
 /// Writes the projects' `.test` domains to the hosts file (one admin prompt).
 #[tauri::command]
 pub async fn sync_hosts(state: State<'_, AppState>) -> Cmd<()> {
@@ -931,23 +1120,67 @@ pub async fn sync_hosts(state: State<'_, AppState>) -> Cmd<()> {
     hosts::sync_elevated(&domains).await
 }
 
-/// Opens `http://<name>.test[:port]/` on a running web server (nginx first).
+/// Turns on HTTPS for the projects: creates the local CA, has the OS (and
+/// browsers with their own database) trust it, then serves every project on
+/// HTTPS too.
+#[tauri::command]
+pub async fn enable_https(state: State<'_, AppState>) -> Cmd<tls::BrowserTrust> {
+    let trust = tls::enable(&state.layout()).await?;
+    apply_vhosts(&state).await?;
+    Ok(trust)
+}
+
+/// Linux: lets nginx `id` use ports 80/443 (one admin prompt), then moves it
+/// there (unless a port was set by hand).
+#[tauri::command]
+pub async fn enable_low_ports(state: State<'_, AppState>, id: String) -> Cmd<()> {
+    let (name, version) = parse_service_id(&id)?;
+    if name != "nginx" {
+        return Err(AppError::InvalidInput("only nginx".into()));
+    }
+    let layout = state.layout();
+    let m = modules::load_installed(&layout, &name, &version)?;
+    let program = state.program_of(&id).ok_or(AppError::NoService)?;
+    crate::admin::grant_low_ports(&program).await?;
+    // The main config holds the port too (the `localhost` server).
+    modules::write_configs(&layout, &m, service_port(&state, &m), true)?;
+    let running = state.supervisor.is_active(&id).await;
+    if running {
+        state.supervisor.stop(&id).await?;
+    }
+    apply_vhosts(&state).await?;
+    if running {
+        start_service_inner(&state, &id).await?;
+    }
+    Ok(())
+}
+
+/// Opens a project on a running web server (nginx first): over HTTPS when the
+/// local CA is trusted.
 #[tauri::command]
 pub async fn open_project(app: AppHandle, state: State<'_, AppState>, name: String) -> Cmd<()> {
     let layout = state.layout();
     let domain = find_project(&layout, &name)?
         .domain
         .ok_or_else(|| AppError::InvalidInput(format!("project name '{name}'")))?;
-    let mut port = None;
-    for m in web_servers(&layout).iter().filter(|m| projects::supports_vhosts(m)) {
-        let id = service_id(&m.name, &m.version);
-        if state.supervisor.snapshot(&id).await.status == Status::Running {
-            port = m.service.as_ref().and_then(|s| state.port_for(&id, s));
+    let mut server = None;
+    for m in web_servers(&layout).into_iter().filter(projects::supports_vhosts) {
+        if is_running(&state, &service_id(&m.name, &m.version)).await {
+            server = Some(m);
             break;
         }
     }
-    let port = port.ok_or(AppError::NoService)?;
-    let url = if port == 80 { format!("http://{domain}/") } else { format!("http://{domain}:{port}/") };
+    let m = server.ok_or(AppError::NoService)?;
+    let port = service_port(&state, &m).ok_or(AppError::NoService)?;
+    let https = (m.name == "nginx" && tls::enabled(&layout) && tls::is_trusted(&layout))
+        .then(|| projects::https_port(port))
+        .flatten();
+    let url = match https {
+        Some(443) => format!("https://{domain}/"),
+        Some(p) => format!("https://{domain}:{p}/"),
+        None if port == 80 => format!("http://{domain}/"),
+        None => format!("http://{domain}:{port}/"),
+    };
     app.opener().open_url(url, None::<&str>).map_err(|e| AppError::Internal(e.to_string()))
 }
 
