@@ -306,17 +306,32 @@ Installed apps check `latest.json` on GitHub Releases at startup (can be turned 
 - `TAURI_SIGNING_PRIVATE_KEY` — contents of `~/.tauri/stackyard-updater.key`
 - `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` — contents of `~/.tauri/stackyard-updater.password`
 
+**Versions** are `major.minor.patch` ([Semantic Versioning](https://semver.org/)):
+
+| Part | When | Command |
+|---|---|---|
+| major (`1.0.0`) | big changes that can break old data, configuration, or habits | `npm version major` |
+| minor (`0.5.0`) | new features that keep working with the previous version | `npm version minor` |
+| patch (`0.4.1`) | bug fixes and small tweaks | `npm version patch` |
+
+**Changelog.** Every change users notice goes into [`CHANGELOG.md`](CHANGELOG.md) under `## [Belum dirilis]`, grouped as `### Ditambahkan`, `### Diubah`, `### Diperbaiki`, `### Dihapus` (also `### Keamanan`, `### Usang`). The app shows these entries:
+
+- before installing an update: every version between the installed one and the new one;
+- once after updating: "What's new";
+- any time: **Settings → Changelog**.
+
 **Every release:**
 
 ```bash
 git status                 # commit everything first: CI builds the tagged commit
-npm version 0.3.0          # bumps package.json + Cargo.toml, commits, and tags v0.3.0
+npm version minor          # fails if "Belum dirilis" is empty; otherwise moves it to a
+                           # dated section, bumps package.json + Cargo.toml, commits, tags
 git push --follow-tags     # triggers the Release workflow (Windows, macOS, Linux)
 ```
 
-The workflow (about 15–25 minutes) creates a **draft release** with every installer plus `latest.json`. Review it, write the release notes, then click **Publish** — installed apps see the new version from that moment.
+The workflow (about 15–25 minutes) stops early if the tag has no changelog section. It creates a **draft release** with every installer plus `latest.json`. The release page text is that version's changelog section; `latest.json` carries the full history, so apps that skipped versions see all of them. Review the draft, then click **Publish** — installed apps see the new version from that moment.
 
-For a local build without tagging, bump the version only: `npm version 0.3.0 --no-git-tag-version`. Always bump the version before a new build; two builds with the same version number are hard to tell apart.
+For a local build without tagging, bump the version only: `npm version 0.3.0 --no-git-tag-version` (the changelog is left alone). Always bump the version before a new build; two builds with the same version number are hard to tell apart.
 
 > If the updater key is lost, installed apps can no longer receive updates and must be reinstalled manually. Keep the key and its password in a password manager.
 

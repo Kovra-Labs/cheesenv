@@ -256,6 +256,21 @@ const en: typeof id = {
     auto: 'Check for updates automatically when the app opens',
     autoTitle: 'Check automatically',
   },
+  changelog: {
+    whatsNew: "What's new in Stackyard {v}",
+    whatsNewHint: 'Stackyard was updated. Here is what changed:',
+    inUpdate: 'What changes in this update:',
+    history: 'Changelog',
+    kind: {
+      added: 'Added',
+      changed: 'Changed',
+      fixed: 'Fixed',
+      removed: 'Removed',
+      security: 'Security',
+      deprecated: 'Deprecated',
+      other: 'Other',
+    },
+  },
   errors: {
     INVALID_INPUT: 'Invalid input.',
     NOT_FOUND: 'Not found.',

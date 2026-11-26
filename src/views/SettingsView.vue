@@ -7,6 +7,9 @@ import { useI18n } from 'vue-i18n';
 import { api, events, type Settings } from '../api';
 import { applySettings, attempt, store, toast, toastError } from '../store';
 import AppIcon, { type IconName } from '../components/AppIcon.vue';
+import ChangelogList from '../components/ChangelogList.vue';
+import ChangelogDialog from '../components/ChangelogDialog.vue';
+import { history, parseChangelog, releasesBetween } from '../changelog';
 
 const { t } = useI18n();
 const dataDir = ref(store.settings!.data_dir);
@@ -60,6 +63,14 @@ const themes: { value: Settings['theme']; icon: IconName }[] = [
 async function patch(update: Partial<Settings>) {
   await attempt(async () => applySettings(await api.updateSettings(update)));
 }
+
+const historyDialog = ref<InstanceType<typeof ChangelogDialog> | null>(null);
+
+/** Every version between this build and the update, from the updater notes. */
+const updateReleases = computed(() => {
+  const u = store.update;
+  return u ? releasesBetween(parseChangelog(u.notes), u.current_version, u.version) : [];
+});
 
 const checking = ref(false);
 const installing = ref(false);
@@ -236,7 +247,13 @@ async function saveDataDir() {
           <div class="row">
             <span class="badge info">{{ t('update.newVersion', { v: store.update.version }) }}</span>
           </div>
-          <p v-if="store.update.notes" class="notes">{{ store.update.notes }}</p>
+          <template v-if="updateReleases.length">
+            <strong>{{ t('changelog.inUpdate') }}</strong>
+            <div class="update-notes">
+              <ChangelogList :releases="updateReleases" />
+            </div>
+          </template>
+          <p v-else-if="store.update.notes" class="notes">{{ store.update.notes }}</p>
           <p class="hint">{{ t('update.note') }}</p>
           <div v-if="installing" class="prog" role="status">
             <div class="bar" :class="{ indeterminate: progressPct === null }">
@@ -301,7 +318,13 @@ async function saveDataDir() {
         <p class="hint">{{ t('settings.version', { v: store.info.version, p: store.info.platform }) }} · MIT</p>
         <p class="hint">{{ t('settings.aboutText') }}</p>
       </div>
+      <span class="spacer" />
+      <button v-if="history.length" class="btn" @click="historyDialog?.open()">
+        <AppIcon name="logs" />{{ t('changelog.history') }}
+      </button>
     </section>
+
+    <ChangelogDialog ref="historyDialog" :title="t('changelog.history')" :releases="history" />
   </div>
 </template>
 
@@ -425,6 +448,14 @@ async function saveDataDir() {
 
 .notes {
   white-space: pre-wrap;
+}
+
+.update-notes {
+  max-height: 320px;
+  overflow-y: auto;
+  padding: 14px 16px;
+  border-radius: var(--radius-sm);
+  background: var(--surface);
 }
 
 .prog {
