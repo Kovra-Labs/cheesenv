@@ -1,14 +1,14 @@
 <script setup lang="ts">
 import logoUrl from './assets/logo.webp';
-import { nextTick, ref, watch } from 'vue';
+import { computed, nextTick, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { store, runningCount, dismissToast } from './store';
 import { fmtBytes } from './ui';
-import { takeUnseen, type Release } from './changelog';
+import { history, takeUnseen } from './changelog';
 import AppIcon, { type IconName } from './components/AppIcon.vue';
 import ChangelogDialog from './components/ChangelogDialog.vue';
 
-const { t } = useI18n();
+const { t, locale } = useI18n();
 const main = ref<HTMLElement | null>(null);
 const nav: { to: string; key: string; icon: IconName }[] = [
   { to: '/', key: 'dashboard', icon: 'dashboard' },
@@ -24,13 +24,14 @@ const nav: { to: string; key: string; icon: IconName }[] = [
 const resetScroll = () => main.value?.scrollTo({ top: 0 });
 
 // "What's new" once after the app was updated.
-const whatsNew = ref<Release[]>([]);
+const unseen = ref<string[]>([]);
+const whatsNew = computed(() => history(locale.value).filter((r) => unseen.value.includes(r.version)));
 const whatsNewDialog = ref<InstanceType<typeof ChangelogDialog> | null>(null);
 watch(
   () => store.ready && store.info?.version,
   async (version) => {
     if (!version) return;
-    whatsNew.value = takeUnseen(version, store.services.length > 0);
+    unseen.value = takeUnseen(version, store.services.length > 0);
     if (!whatsNew.value.length) return;
     await nextTick();
     whatsNewDialog.value?.open();

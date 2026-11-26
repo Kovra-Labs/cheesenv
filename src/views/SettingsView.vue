@@ -9,9 +9,9 @@ import { applySettings, attempt, store, toast, toastError } from '../store';
 import AppIcon, { type IconName } from '../components/AppIcon.vue';
 import ChangelogList from '../components/ChangelogList.vue';
 import ChangelogDialog from '../components/ChangelogDialog.vue';
-import { history, parseChangelog, releasesBetween } from '../changelog';
+import { history, localizedNotes, parseChangelog, releasesBetween } from '../changelog';
 
-const { t } = useI18n();
+const { t, locale } = useI18n();
 const dataDir = ref(store.settings!.data_dir);
 const saving = ref(false);
 const dataDirDirty = computed(() => dataDir.value.trim() !== store.settings?.data_dir);
@@ -67,10 +67,15 @@ async function patch(update: Partial<Settings>) {
 const historyDialog = ref<InstanceType<typeof ChangelogDialog> | null>(null);
 
 /** Every version between this build and the update, from the updater notes. */
+const updateNotes = computed(() => {
+  const u = store.update;
+  return u ? localizedNotes(u.notes, u.notes_i18n, locale.value) : null;
+});
 const updateReleases = computed(() => {
   const u = store.update;
-  return u ? releasesBetween(parseChangelog(u.notes), u.current_version, u.version) : [];
+  return u ? releasesBetween(parseChangelog(updateNotes.value), u.current_version, u.version) : [];
 });
+const historyReleases = computed(() => history(locale.value));
 
 const checking = ref(false);
 const installing = ref(false);
@@ -253,7 +258,7 @@ async function saveDataDir() {
               <ChangelogList :releases="updateReleases" />
             </div>
           </template>
-          <p v-else-if="store.update.notes" class="notes">{{ store.update.notes }}</p>
+          <p v-else-if="updateNotes" class="notes">{{ updateNotes }}</p>
           <p class="hint">{{ t('update.note') }}</p>
           <div v-if="installing" class="prog" role="status">
             <div class="bar" :class="{ indeterminate: progressPct === null }">
@@ -319,12 +324,12 @@ async function saveDataDir() {
         <p class="hint">{{ t('settings.aboutText') }}</p>
       </div>
       <span class="spacer" />
-      <button v-if="history.length" class="btn" @click="historyDialog?.open()">
+      <button v-if="historyReleases.length" class="btn" @click="historyDialog?.open()">
         <AppIcon name="logs" />{{ t('changelog.history') }}
       </button>
     </section>
 
-    <ChangelogDialog ref="historyDialog" :title="t('changelog.history')" :releases="history" />
+    <ChangelogDialog ref="historyDialog" :title="t('changelog.history')" :releases="historyReleases" />
   </div>
 </template>
 

@@ -113,6 +113,8 @@ export interface UpdateInfo {
   version: string;
   current_version: string;
   notes: string | null;
+  /** The same notes per language code (latest.json `notes_i18n`). */
+  notes_i18n: Record<string, string>;
   date: string | null;
 }
 

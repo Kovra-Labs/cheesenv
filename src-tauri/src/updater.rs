@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, State};
 use tauri_plugin_updater::{Update, UpdaterExt};
@@ -17,7 +19,22 @@ pub struct UpdateInfo {
     version: String,
     current_version: String,
     notes: Option<String>,
+    /// `notes_i18n` from latest.json: the same notes per language code.
+    notes_i18n: BTreeMap<String, String>,
     date: Option<String>,
+}
+
+/// Per-language notes; anything that is not a language → text pair is ignored.
+fn localized_notes(raw: &serde_json::Value) -> BTreeMap<String, String> {
+    raw.get("notes_i18n")
+        .and_then(|v| v.as_object())
+        .map(|m| {
+            m.iter()
+                .filter(|(k, _)| k.len() <= 8 && k.chars().all(|c| c.is_ascii_alphanumeric() || c == '-'))
+                .filter_map(|(k, v)| Some((k.clone(), v.as_str()?.to_owned())))
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 #[derive(Clone, Serialize)]
@@ -46,6 +63,7 @@ pub async fn check_update(app: AppHandle, pending: State<'_, PendingUpdate>) -> 
         version: u.version.clone(),
         current_version: u.current_version.clone(),
         notes: u.body.clone(),
+        notes_i18n: localized_notes(&u.raw_json),
         date: u.date.map(|d| d.to_string()),
     });
     *pending.0.lock().await = update;
@@ -85,4 +103,19 @@ pub async fn install_update(
 
     state.quitting.store(true, std::sync::atomic::Ordering::SeqCst);
     app.restart()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::localized_notes;
+    use serde_json::json;
+
+    #[test]
+    fn localized_notes_keeps_language_text_pairs_only() {
+        let raw = json!({ "notes_i18n": { "id": "## [1.0.0]", "en": "## [1.0.0]", "x/../y": "bad", "fr": 1 } });
+        let notes = localized_notes(&raw);
+        assert_eq!(notes.keys().collect::<Vec<_>>(), ["en", "id"]);
+        assert!(localized_notes(&json!({ "notes": "x" })).is_empty());
+        assert!(localized_notes(&json!({ "notes_i18n": "x" })).is_empty());
+    }
 }
