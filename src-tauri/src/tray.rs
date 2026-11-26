@@ -38,7 +38,7 @@ pub fn show_main(app: &AppHandle) {
 }
 
 pub fn create(app: &AppHandle, lang: &str) -> tauri::Result<()> {
-    let mut builder = TrayIconBuilder::with_id(TRAY_ID)
+    let builder = TrayIconBuilder::with_id(TRAY_ID)
         .tooltip("Stackyard")
         .menu(&build_menu(app, lang)?)
         .on_menu_event(|app, event| match event.id().as_ref() {
@@ -62,10 +62,11 @@ pub fn create(app: &AppHandle, lang: &str) -> tauri::Result<()> {
             "quit" => app.exit(0),
             _ => {}
         });
-    if let Some(icon) = app.default_window_icon() {
-        builder = builder.icon(icon.clone());
-    }
-    builder.build(app)?;
+    // Monochrome glyph; as a template image macOS recolors it for light/dark menu bars.
+    builder
+        .icon(tauri::include_image!("icons/tray.png"))
+        .icon_as_template(true)
+        .build(app)?;
     Ok(())
 }
 
