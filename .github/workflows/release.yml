@@ -1,6 +1,6 @@
 name: Release
 
-# Push a tag like v0.2.0 (see README "Releases & auto-update"). The release is
+# Push a tag like v0.2.0 (created by `npm version`). The release is
 # created as a draft; publishing it makes the update visible to installed apps.
 # Its text comes from CHANGELOG.md and CHANGELOG.en.md: the tag's section in
 # both languages on the release page, and every released section in
