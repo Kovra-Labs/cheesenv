@@ -11,6 +11,7 @@
     "tauri": "tauri",
     "registry": "node registry/tool.mjs",
     "registry:upstream": "node registry/upstream.mjs",
+    "preversion": "node scripts/changelog.mjs check-unreleased",
     "version": "node scripts/sync-version.mjs"
   },
   "dependencies": {

@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import logoUrl from './assets/logo.webp';
-import { ref } from 'vue';
+import { nextTick, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { store, runningCount, dismissToast } from './store';
 import { fmtBytes } from './ui';
+import { takeUnseen, type Release } from './changelog';
 import AppIcon, { type IconName } from './components/AppIcon.vue';
+import ChangelogDialog from './components/ChangelogDialog.vue';
 
 const { t } = useI18n();
 const main = ref<HTMLElement | null>(null);
@@ -20,6 +22,21 @@ const nav: { to: string; key: string; icon: IconName }[] = [
 
 /** Each page starts at the top once the previous one has faded out. */
 const resetScroll = () => main.value?.scrollTo({ top: 0 });
+
+// "What's new" once after the app was updated.
+const whatsNew = ref<Release[]>([]);
+const whatsNewDialog = ref<InstanceType<typeof ChangelogDialog> | null>(null);
+watch(
+  () => store.ready && store.info?.version,
+  async (version) => {
+    if (!version) return;
+    whatsNew.value = takeUnseen(version, store.services.length > 0);
+    if (!whatsNew.value.length) return;
+    await nextTick();
+    whatsNewDialog.value?.open();
+  },
+  { immediate: true },
+);
 </script>
 
 <template>
@@ -85,6 +102,14 @@ const resetScroll = () => main.value?.scrollTo({ top: 0 });
         </button>
       </div>
     </TransitionGroup>
+
+    <ChangelogDialog
+      v-if="whatsNew.length"
+      ref="whatsNewDialog"
+      :title="t('changelog.whatsNew', { v: store.info?.version ?? '' })"
+      :hint="t('changelog.whatsNewHint')"
+      :releases="whatsNew"
+    />
   </div>
 </template>
 

@@ -254,6 +254,21 @@ export default {
     auto: 'Periksa pembaruan otomatis saat aplikasi dibuka',
     autoTitle: 'Periksa otomatis',
   },
+  changelog: {
+    whatsNew: 'Apa yang baru di Stackyard {v}',
+    whatsNewHint: 'Stackyard sudah diperbarui. Ini perubahannya:',
+    inUpdate: 'Yang berubah di pembaruan ini:',
+    history: 'Riwayat perubahan',
+    kind: {
+      added: 'Ditambahkan',
+      changed: 'Diubah',
+      fixed: 'Diperbaiki',
+      removed: 'Dihapus',
+      security: 'Keamanan',
+      deprecated: 'Usang',
+      other: 'Lainnya',
+    },
+  },
   errors: {
     INVALID_INPUT: 'Input tidak valid.',
     NOT_FOUND: 'Data tidak ditemukan.',

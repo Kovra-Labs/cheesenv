@@ -1,7 +1,9 @@
 name: Release
 
-# Push a tag like v0.2.0 (see README "Rilis & update"). The release is created
-# as a draft; publishing it makes the update visible to installed apps.
+# Push a tag like v0.2.0 (see README "Releases & auto-update"). The release is
+# created as a draft; publishing it makes the update visible to installed apps.
+# Its text comes from CHANGELOG.md: the tag's section on the release page, and
+# every released section in latest.json, which the app shows before updating.
 on:
   push:
     tags: ['v*']
@@ -10,7 +12,30 @@ permissions:
   contents: write
 
 jobs:
+  changelog:
+    runs-on: ubuntu-22.04
+    outputs:
+      body: ${{ steps.body.outputs.body }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Release notes from CHANGELOG.md
+        id: body
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          node scripts/changelog.mjs check "$version"
+          {
+            echo 'body<<STACKYARD_NOTES_EOF'
+            node scripts/changelog.mjs section "$version"
+            echo
+            echo 'Unduh installer untuk sistem operasi kamu di bagian **Assets**.'
+            echo 'STACKYARD_NOTES_EOF'
+          } >> "$GITHUB_OUTPUT"
+
   build:
+    needs: changelog
     strategy:
       fail-fast: false
       matrix:
@@ -48,7 +73,24 @@ jobs:
         with:
           tagName: ${{ github.ref_name }}
           releaseName: Stackyard ${{ github.ref_name }}
-          releaseBody: Lihat catatan perubahan di bawah. Unduh installer sesuai sistem operasi kamu.
+          releaseBody: ${{ needs.changelog.outputs.body }}
           releaseDraft: true
           includeUpdaterJson: true
           args: ${{ matrix.args }}
+
+  # After every platform uploaded its part of latest.json.
+  updater-notes:
+    needs: build
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Version history into latest.json
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release download "$GITHUB_REF_NAME" --pattern latest.json --dir "$RUNNER_TEMP"
+          node scripts/changelog.mjs updater-notes "$RUNNER_TEMP/latest.json"
+          gh release upload "$GITHUB_REF_NAME" "$RUNNER_TEMP/latest.json" --clobber
