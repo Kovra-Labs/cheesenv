@@ -5,6 +5,12 @@ Keep both files in step: same versions, same entries.
 
 ## [Unreleased]
 
+## [0.5.2] - 2026-11-26
+
+### Changed
+
+- New app logo, including the system tray icon.
+
 ## [0.5.1] - 2026-11-26
 
 ### Fixed
