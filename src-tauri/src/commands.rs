@@ -1,4 +1,5 @@
 use serde::Serialize;
+use tauri::ipc::{Channel, InvokeResponseBody};
 use tauri::{AppHandle, Emitter, State};
 use tauri_plugin_opener::OpenerExt;
 
@@ -10,13 +11,15 @@ use crate::registry::{compare_versions, platform_key, IndexEntry, LoadedIndex, M
 use crate::settings::{ServiceSettings, Settings, SettingsUpdate};
 use crate::state::AppState;
 use crate::supervisor::Status;
-use crate::{logs, panel, runtimes, tray};
+use crate::terminal::Terminals;
+use crate::{hosts, logs, panel, projects, runtimes, terminal, tray};
 
 pub const EVENT_SERVICE_STATUS: &str = "service-status";
 pub const EVENT_SERVICES_CHANGED: &str = "services-changed";
 pub const EVENT_INSTALL_PROGRESS: &str = "install-progress";
 /// Progress of the built-in panels being installed/updated in the background.
 pub const EVENT_PANELS_SETUP: &str = "panels-setup";
+pub const EVENT_TERMINAL_EXIT: &str = "terminal-exit";
 
 type Cmd<T> = Result<T, AppError>;
 
@@ -531,6 +534,13 @@ pub async fn start_service_inner(state: &AppState, id: &str) -> AppResult<()> {
     if state.supervisor.is_active(id).await {
         return Ok(());
     }
+    let (name, version) = parse_service_id(id)?;
+    if projects::WEB_SERVERS.contains(&name.as_str()) {
+        // Never blocks the server itself: it still serves www/ on localhost.
+        if let Err(e) = ensure_vhost_include(state, &modules::load_installed(&state.layout(), &name, &version)?) {
+            eprintln!("[stackyard] vhost include for {id}: {e}");
+        }
+    }
     let (launch, port, m) = state.launch_for(id)?;
     if let Some(port) = port {
         if !ports::is_free(port) {
@@ -539,6 +549,13 @@ pub async fn start_service_inner(state: &AppState, id: &str) -> AppResult<()> {
         }
     }
     let layout = state.layout();
+    if let (true, Some(port)) = (projects::supports_vhosts(&m), port) {
+        // Never blocks the server itself: it still serves www/ on localhost.
+        let php = php_port(state);
+        if let Err(e) = projects::write_vhosts(&layout, &m, port, php, &projects::list(&layout)) {
+            eprintln!("[stackyard] vhosts for {id}: {e}");
+        }
+    }
     if !modules::is_initialized(&layout, &m) && m.service.as_ref().is_some_and(|s| s.init.is_some()) {
         // Same guard as install/uninstall: one init per module at a time.
         let _guard = BusyGuard::acquire(state, &m.name)?;
@@ -770,6 +787,7 @@ pub fn open_folder(app: AppHandle, state: State<'_, AppState>, kind: String, id:
             let (n, v) = parse_service_id(&id)?;
             layout.module_dir(&n, &v)
         }
+        ("project", Some(name)) => find_project(&layout, &name)?.path.into(),
         _ => return Err(AppError::InvalidInput("folder kind".into())),
     };
     if !path.exists() {
@@ -778,4 +796,213 @@ pub fn open_folder(app: AppHandle, state: State<'_, AppState>, kind: String, id:
     app.opener()
         .open_path(path.to_string_lossy(), None::<&str>)
         .map_err(|e| AppError::Internal(e.to_string()))
+}
+
+// ---------- projects ----------
+
+#[derive(Serialize)]
+pub struct WebServerView {
+    id: String,
+    name: String,
+    version: String,
+    port: Option<u16>,
+    running: bool,
+    /// Its config includes Stackyard's vhosts (reinstall older installs).
+    vhosts: bool,
+}
+
+#[derive(Serialize)]
+pub struct ProjectsView {
+    projects: Vec<projects::Project>,
+    servers: Vec<WebServerView>,
+    /// PHP-FPM service that `.php` files are passed to (newest installed).
+    php: Option<String>,
+    /// The hosts file lists exactly the projects' domains.
+    hosts_synced: bool,
+    hosts_file: String,
+    /// Lines to add by hand when the admin prompt is not available.
+    hosts_lines: Vec<String>,
+}
+
+fn web_servers(layout: &crate::paths::Layout) -> Vec<InstalledModule> {
+    modules::list_installed(layout)
+        .into_iter()
+        .filter(|m| projects::WEB_SERVERS.contains(&m.name.as_str()) && m.service.is_some())
+        .collect()
+}
+
+fn newest_php(layout: &crate::paths::Layout) -> Option<InstalledModule> {
+    // `list_installed` sorts each module newest first.
+    modules::list_installed(layout).into_iter().find(|m| m.name == "php" && m.service.is_some())
+}
+
+fn php_port(state: &AppState) -> Option<u16> {
+    let php = newest_php(&state.layout())?;
+    state.port_for(&service_id(&php.name, &php.version), php.service.as_ref()?)
+}
+
+fn find_project(layout: &crate::paths::Layout, name: &str) -> AppResult<projects::Project> {
+    projects::list(layout)
+        .into_iter()
+        .find(|p| p.name == name)
+        .ok_or_else(|| AppError::NotFound(format!("project {name}")))
+}
+
+/// Web servers installed from a registry template without the vhost include
+/// get it added (their snapshot is updated, the main config regenerated with
+/// the previous file backed up), so no reinstall is needed. Returns the
+/// updated module when it changed.
+fn ensure_vhost_include(state: &AppState, m: &InstalledModule) -> AppResult<Option<InstalledModule>> {
+    let Some(updated) = projects::with_vhost_include(m) else { return Ok(None) };
+    let layout = state.layout();
+    let id = service_id(&m.name, &m.version);
+    let port = updated.service.as_ref().and_then(|s| state.port_for(&id, s));
+    modules::save_installed(&layout, &updated)?;
+    modules::write_configs(&layout, &updated, port, true)?;
+    Ok(Some(updated))
+}
+
+/// Rewrites every web server's vhosts and restarts the running ones whose
+/// vhosts changed, so new and removed project folders take effect.
+pub(crate) async fn apply_vhosts(state: &AppState) -> AppResult<()> {
+    let layout = state.layout();
+    let list = projects::list(&layout);
+    let php = php_port(state);
+    for m in web_servers(&layout) {
+        let migrated = ensure_vhost_include(state, &m)?;
+        let m = migrated.clone().unwrap_or(m);
+        if !projects::supports_vhosts(&m) {
+            continue;
+        }
+        let id = service_id(&m.name, &m.version);
+        let Some(port) = m.service.as_ref().and_then(|s| state.port_for(&id, s)) else { continue };
+        let changed = projects::write_vhosts(&layout, &m, port, php, &list)? || migrated.is_some();
+        if changed && state.supervisor.is_active(&id).await {
+            state.supervisor.stop(&id).await?;
+            start_service_inner(state, &id).await?;
+        }
+    }
+    Ok(())
+}
+
+async fn projects_view(state: &AppState) -> ProjectsView {
+    let layout = state.layout();
+    let list = projects::list(&layout);
+    let domains: std::collections::BTreeSet<String> = projects::domains(&list).into_iter().collect();
+    let mut servers = Vec::new();
+    for m in web_servers(&layout) {
+        let id = service_id(&m.name, &m.version);
+        servers.push(WebServerView {
+            port: m.service.as_ref().and_then(|s| state.port_for(&id, s)),
+            running: state.supervisor.snapshot(&id).await.status == Status::Running,
+            vhosts: projects::supports_vhosts(&m),
+            name: m.name.clone(),
+            version: m.version.clone(),
+            id,
+        });
+    }
+    ProjectsView {
+        hosts_synced: hosts::in_sync(&domains),
+        hosts_file: hosts::hosts_path().display().to_string(),
+        hosts_lines: domains.iter().map(|d| format!("127.0.0.1 {d}")).collect(),
+        php: newest_php(&layout).map(|m| service_id(&m.name, &m.version)),
+        projects: list,
+        servers,
+    }
+}
+
+#[tauri::command]
+pub async fn sync_projects(state: State<'_, AppState>) -> Cmd<ProjectsView> {
+    apply_vhosts(&state).await?;
+    Ok(projects_view(&state).await)
+}
+
+#[tauri::command]
+pub async fn create_project(state: State<'_, AppState>, name: String) -> Cmd<ProjectsView> {
+    projects::create(&state.layout(), &name)?;
+    apply_vhosts(&state).await?;
+    Ok(projects_view(&state).await)
+}
+
+/// Writes the projects' `.test` domains to the hosts file (one admin prompt).
+#[tauri::command]
+pub async fn sync_hosts(state: State<'_, AppState>) -> Cmd<()> {
+    let domains = projects::domains(&projects::list(&state.layout())).into_iter().collect();
+    hosts::sync_elevated(&domains).await
+}
+
+/// Opens `http://<name>.test[:port]/` on a running web server (nginx first).
+#[tauri::command]
+pub async fn open_project(app: AppHandle, state: State<'_, AppState>, name: String) -> Cmd<()> {
+    let layout = state.layout();
+    let domain = find_project(&layout, &name)?
+        .domain
+        .ok_or_else(|| AppError::InvalidInput(format!("project name '{name}'")))?;
+    let mut port = None;
+    for m in web_servers(&layout).iter().filter(|m| projects::supports_vhosts(m)) {
+        let id = service_id(&m.name, &m.version);
+        if state.supervisor.snapshot(&id).await.status == Status::Running {
+            port = m.service.as_ref().and_then(|s| state.port_for(&id, s));
+            break;
+        }
+    }
+    let port = port.ok_or(AppError::NoService)?;
+    let url = if port == 80 { format!("http://{domain}/") } else { format!("http://{domain}:{port}/") };
+    app.opener().open_url(url, None::<&str>).map_err(|e| AppError::Internal(e.to_string()))
+}
+
+// ---------- terminal ----------
+
+#[derive(Clone, Serialize)]
+struct TerminalExit {
+    id: u32,
+    code: Option<u32>,
+}
+
+/// Opens a shell in `www/` (or a project folder). Output is streamed as raw
+/// bytes through `on_output`; `terminal-exit` is emitted when the shell ends.
+#[tauri::command]
+pub fn terminal_open(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    terms: State<'_, Terminals>,
+    cols: u16,
+    rows: u16,
+    project: Option<String>,
+    on_output: Channel<InvokeResponseBody>,
+) -> Cmd<u32> {
+    let layout = state.layout();
+    let cwd = match project {
+        Some(name) => std::path::PathBuf::from(find_project(&layout, &name)?.path),
+        None => layout.www(),
+    };
+    let dirs = terminal::path_dirs(&layout, &modules::list_installed(&layout));
+    terms.open(
+        &cwd,
+        &dirs,
+        &layout.root,
+        cols,
+        rows,
+        move |bytes| {
+            let _ = on_output.send(InvokeResponseBody::Raw(bytes));
+        },
+        move |id, code| {
+            let _ = app.emit(EVENT_TERMINAL_EXIT, TerminalExit { id, code });
+        },
+    )
+}
+
+#[tauri::command]
+pub fn terminal_write(terms: State<'_, Terminals>, id: u32, data: String) -> Cmd<()> {
+    terms.write(id, data.as_bytes())
+}
+
+#[tauri::command]
+pub fn terminal_resize(terms: State<'_, Terminals>, id: u32, cols: u16, rows: u16) -> Cmd<()> {
+    terms.resize(id, cols, rows)
+}
+
+#[tauri::command]
+pub fn terminal_close(terms: State<'_, Terminals>, id: u32) -> Cmd<()> {
+    terms.close(id)
 }

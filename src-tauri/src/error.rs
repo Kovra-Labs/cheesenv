@@ -11,6 +11,8 @@ pub enum AppError {
     NotFound(String),
     #[error("already installed")]
     AlreadyInstalled,
+    #[error("already exists")]
+    AlreadyExists,
     #[error("operation already in progress")]
     Busy,
     #[error("port {port} in use")]
@@ -49,6 +51,7 @@ impl AppError {
             Self::InvalidInput(_) => "INVALID_INPUT",
             Self::NotFound(_) => "NOT_FOUND",
             Self::AlreadyInstalled => "ALREADY_INSTALLED",
+            Self::AlreadyExists => "ALREADY_EXISTS",
             Self::Busy => "BUSY",
             Self::PortInUse { .. } => "PORT_IN_USE",
             Self::ServiceRunning => "SERVICE_RUNNING",

@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "updated": "2026-11-25T07:18:39.823Z",
+  "updated": "2026-11-26T02:10:46.990Z",
   "modules": [
     {
       "name": "apache",
@@ -10,7 +10,7 @@
         "id": "Apache HTTP Server dengan dukungan .htaccess dan PHP-FPM"
       },
       "latest": "2.4.71",
-      "manifest_sha256": "53dadef65fe11b10a2b34f68c1aa8bedadc210a47d2e415ebedec24c64b4d332",
+      "manifest_sha256": "81792d8595d79ae56dee2f77690c095bd7ed7864b8818e00e2adf5cd65615f7c",
       "license": "Apache-2.0",
       "homepage": "https://httpd.apache.org"
     },
@@ -64,7 +64,7 @@
         "id": "Web server dan reverse proxy berperforma tinggi"
       },
       "latest": "1.30.5",
-      "manifest_sha256": "ab6c535cd165b0c63899a3b47c78274a6ca9d0993f4267cec46105a88e8751d6",
+      "manifest_sha256": "01e1421471821769e264b8a33c8e2dcef810ef04e062e232ad631d730a36a0f9",
       "license": "BSD-2-Clause",
       "homepage": "https://nginx.org"
     },

@@ -33,6 +33,7 @@ tauri-plugin-updater = "2"
 keyring = { version = "3", features = ["apple-native", "windows-native", "async-secret-service", "tokio", "crypto-rust"] }
 liblzma = { version = "0.4.9", features = ["static"] }
 getrandom = "0.3"
+portable-pty = "0.9"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

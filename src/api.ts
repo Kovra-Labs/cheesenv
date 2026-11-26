@@ -1,4 +1,4 @@
-import { invoke } from '@tauri-apps/api/core';
+import { Channel, invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 
 export type ServiceStatus = 'stopped' | 'starting' | 'running' | 'stopping' | 'crashed';
@@ -139,6 +139,41 @@ export interface LogChunk {
   reset: boolean;
 }
 
+export interface Project {
+  name: string;
+  /** `<name>.test`, or null when the folder name is not a valid domain label. */
+  domain: string | null;
+  path: string;
+  /** Folder served as web root (`public/` when present). */
+  doc_root: string;
+}
+
+export interface WebServer {
+  id: string;
+  name: string;
+  version: string;
+  port: number | null;
+  running: boolean;
+  /** Its config includes Stackyard's vhosts (false for installs from older templates). */
+  vhosts: boolean;
+}
+
+export interface ProjectsView {
+  projects: Project[];
+  servers: WebServer[];
+  /** PHP-FPM service id handling `.php` files, if PHP is installed. */
+  php: string | null;
+  hosts_synced: boolean;
+  hosts_file: string;
+  /** Lines to add to the hosts file by hand. */
+  hosts_lines: string[];
+}
+
+export interface TerminalExit {
+  id: number;
+  code: number | null;
+}
+
 /** Error shape produced by the Rust core (see src-tauri/src/error.rs). */
 export interface AppError {
   code: string;
@@ -188,8 +223,22 @@ export const api = {
   checkUpdate: () => invoke<UpdateInfo | null>('check_update'),
   installUpdate: () => invoke<void>('install_update'),
 
-  openFolder: (kind: 'root' | 'www' | 'logs' | 'config' | 'module', id?: string) =>
+  openFolder: (kind: 'root' | 'www' | 'logs' | 'config' | 'module' | 'project', id?: string) =>
     invoke<void>('open_folder', { kind, id: id ?? null }),
+
+  /** Regenerates the web servers' vhosts from www/ and returns the projects. */
+  syncProjects: () => invoke<ProjectsView>('sync_projects'),
+  createProject: (name: string) => invoke<ProjectsView>('create_project', { name }),
+  /** Writes the `.test` domains to the hosts file (administrator prompt). */
+  syncHosts: () => invoke<void>('sync_hosts'),
+  openProject: (name: string) => invoke<void>('open_project', { name }),
+
+  /** Starts a shell; its output arrives as raw bytes on `onOutput`. */
+  terminalOpen: (cols: number, rows: number, project: string | null, onOutput: Channel<ArrayBuffer>) =>
+    invoke<number>('terminal_open', { cols, rows, project, onOutput }),
+  terminalWrite: (id: number, data: string) => invoke<void>('terminal_write', { id, data }),
+  terminalResize: (id: number, cols: number, rows: number) => invoke<void>('terminal_resize', { id, cols, rows }),
+  terminalClose: (id: number) => invoke<void>('terminal_close', { id }),
 };
 
 export const events = {
@@ -201,6 +250,8 @@ export const events = {
   /** Built-in panels (phpMyAdmin, pgAdmin) being installed/updated in the background. */
   panelsSetup: (cb: (p: InstallProgress) => void): Promise<UnlistenFn> =>
     listen<InstallProgress>('panels-setup', (e) => cb(e.payload)),
+  terminalExit: (cb: (e: TerminalExit) => void): Promise<UnlistenFn> =>
+    listen<TerminalExit>('terminal-exit', (e) => cb(e.payload)),
   updateProgress: (cb: (p: UpdateProgress) => void): Promise<UnlistenFn> =>
     listen<UpdateProgress>('update-progress', (e) => cb(e.payload)),
 };

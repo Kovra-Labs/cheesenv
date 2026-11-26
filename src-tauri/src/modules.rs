@@ -64,6 +64,13 @@ pub fn load_installed(layout: &Layout, name: &str, version: &str) -> AppResult<I
         .ok_or_else(|| AppError::NotFound(format!("{name}@{version}")))
 }
 
+/// Replaces the installed snapshot of an already installed module.
+pub fn save_installed(layout: &Layout, m: &InstalledModule) -> AppResult<()> {
+    load_installed(layout, &m.name, &m.version)?;
+    let path = layout.module_dir(&m.name, &m.version).join(META_FILE);
+    write_atomic(&path, &serde_json::to_vec_pretty(m)?)
+}
+
 /// Default port; on macOS/Linux privileged ports fall back to +8000
 /// (80 → 8080, 443 → 8443) until the admin helper exists (PRD §7).
 pub fn default_port(spec: &ServiceSpec) -> Option<u16> {

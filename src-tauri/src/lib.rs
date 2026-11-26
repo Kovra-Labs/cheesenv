@@ -2,17 +2,20 @@ mod commands;
 mod download;
 mod error;
 mod extract;
+mod hosts;
 mod logs;
 mod modules;
 mod panel;
 mod paths;
 mod ports;
+mod projects;
 mod registry;
 mod runtimes;
 mod secrets;
 mod settings;
 mod state;
 mod supervisor;
+mod terminal;
 mod tray;
 mod updater;
 
@@ -28,6 +31,12 @@ use crate::settings::Settings;
 use crate::state::AppState;
 use crate::supervisor::Supervisor;
 
+/// Runs the elevated hosts-file helper when the process was started as one
+/// (`stackyard --hosts-sync …`); returns its exit code, or `None` to start the app.
+pub fn run_helper() -> Option<i32> {
+    hosts::helper_main(&std::env::args().collect::<Vec<_>>())
+}
+
 pub fn run() {
     tauri::Builder::default()
         // Must be registered first: a second launch exits here and just brings
@@ -36,6 +45,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(updater::PendingUpdate::default())
+        .manage(terminal::Terminals::default())
         .setup(|app| {
             let handle = app.handle().clone();
             let settings_path = app.path().app_config_dir()?.join("settings.json");
@@ -125,6 +135,14 @@ pub fn run() {
             commands::open_panel,
             commands::open_folder,
             commands::get_credentials,
+            commands::sync_projects,
+            commands::create_project,
+            commands::sync_hosts,
+            commands::open_project,
+            commands::terminal_open,
+            commands::terminal_write,
+            commands::terminal_resize,
+            commands::terminal_close,
             updater::check_update,
             updater::install_update,
         ])
@@ -136,6 +154,7 @@ pub fn run() {
                 let state = app.state::<AppState>();
                 if !state.quitting.swap(true, Ordering::SeqCst) {
                     api.prevent_exit();
+                    app.state::<terminal::Terminals>().close_all();
                     let app = app.clone();
                     tauri::async_runtime::spawn(async move {
                         app.state::<AppState>().supervisor.stop_all().await;
@@ -230,6 +249,58 @@ mod e2e {
             assert!(!st.layout().module_dir(&n, &v).exists());
             assert!(!st.layout().socket_dir(&n, &v).exists());
         }
+    }
+
+    /// `www/<name>` is served at `<name>.test` (PHP through PHP-FPM), and a
+    /// project added while nginx runs is picked up by `apply_vhosts`.
+    #[tokio::test]
+    #[ignore]
+    async fn project_vhosts_serve_php() {
+        if std::env::var_os("STACKYARD_E2E_REGISTRY").is_none() {
+            return;
+        }
+        let tmp = tempfile::tempdir().unwrap();
+        let st = state(tmp.path());
+        st.layout().ensure().unwrap();
+        let layout = st.layout();
+        let nginx = install(&st, "nginx").await;
+        let php = install(&st, "php").await;
+        // Like an install from the registry before the vhost include existed.
+        let (n, v) = paths::parse_service_id(&nginx).unwrap();
+        let mut old = modules::load_installed(&layout, &n, &v).unwrap();
+        let tpl = old.config_templates.get_mut("nginx.conf").unwrap();
+        let start = tpl.find("\n    # Projects").expect("include in template");
+        tpl.replace_range(start..tpl.rfind('}').unwrap(), "\n");
+        assert!(!projects::supports_vhosts(&old));
+        modules::save_installed(&layout, &old).unwrap();
+        modules::write_configs(&layout, &old, Some(8080), true).unwrap();
+
+        std::fs::create_dir_all(layout.www().join("toko/public")).unwrap();
+        std::fs::write(layout.www().join("toko/public/index.php"), "<?php echo 'php:' . $_SERVER['HTTP_HOST'];").unwrap();
+        for id in [&php, &nginx] {
+            commands::start_service_inner(&st, id).await.expect("start");
+        }
+        tokio::time::sleep(Duration::from_millis(800)).await;
+
+        let client = reqwest::Client::new();
+        let get = |host: &'static str, path: &'static str| {
+            let client = client.clone();
+            async move {
+                let r = client.get(format!("http://127.0.0.1:8080{path}")).header("Host", host).send().await.unwrap();
+                (r.status().as_u16(), r.text().await.unwrap())
+            }
+        };
+        assert!(projects::supports_vhosts(&modules::load_installed(&layout, &n, &v).unwrap()), "include added on start");
+        assert_eq!(get("toko.test", "/").await, (200, "php:toko.test".into()), "front controller via PHP-FPM");
+        assert_eq!(get("toko.test", "/some/route?x=1").await.1, "php:toko.test", "pretty URLs reach index.php");
+        assert!(get("localhost", "/").await.1.contains("It works!"), "localhost still serves www/");
+
+        projects::create(&layout, "blog").unwrap();
+        commands::apply_vhosts(&st).await.unwrap();
+        tokio::time::sleep(Duration::from_millis(800)).await;
+        assert!(get("blog.test", "/").await.1.contains("<h1>blog.test</h1>"), "new project served after restart");
+
+        st.supervisor.stop_all().await;
     }
 
     /// Node.js and Python: the default version's tools run through `<data>/bin`.

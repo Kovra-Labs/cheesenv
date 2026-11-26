@@ -10,8 +10,10 @@ const { t } = useI18n();
 const main = ref<HTMLElement | null>(null);
 const nav: { to: string; key: string; icon: IconName }[] = [
   { to: '/', key: 'dashboard', icon: 'dashboard' },
+  { to: '/projects', key: 'projects', icon: 'globe' },
   { to: '/services', key: 'services', icon: 'server' },
   { to: '/modules', key: 'modules', icon: 'box' },
+  { to: '/terminal', key: 'terminal', icon: 'terminal' },
   { to: '/logs', key: 'logs', icon: 'logs' },
   { to: '/settings', key: 'settings', icon: 'settings' },
 ];
@@ -62,7 +64,10 @@ const resetScroll = () => main.value?.scrollTo({ top: 0 });
     <main ref="main" class="main">
       <RouterView v-if="store.ready" v-slot="{ Component }">
         <Transition name="page" mode="out-in" @after-leave="resetScroll">
-          <component :is="Component" />
+          <!-- Terminal tabs keep their shells while other pages are open. -->
+          <KeepAlive include="TerminalView">
+            <component :is="Component" />
+          </KeepAlive>
         </Transition>
       </RouterView>
       <div v-else class="boot" role="status">
