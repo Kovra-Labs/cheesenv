@@ -26,6 +26,8 @@ Cara menulis:
 
 ## [Belum dirilis]
 
+## [0.5.2] - 2026-11-26
+
 ### Diubah
 
 - Logo aplikasi baru, termasuk ikon di tray sistem.
