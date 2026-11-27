@@ -377,6 +377,28 @@ mod e2e {
         assert!(run("pip", "--version").contains("pip"));
     }
 
+    /// Composer runs through its `<data>/bin` shim with the PHP CLI it ships.
+    #[tokio::test]
+    #[ignore]
+    async fn composer_on_path() {
+        if std::env::var_os("CHEESENV_E2E_REGISTRY").is_none() {
+            return;
+        }
+        let tmp = tempfile::tempdir().unwrap();
+        let st = state(tmp.path());
+        st.layout().ensure().unwrap();
+        let id = install(&st, "composer").await;
+        let (n, v) = paths::parse_service_id(&id).unwrap();
+        runtimes::activate(&st.layout(), &modules::load_installed(&st.layout(), &n, &v).unwrap()).unwrap();
+        let out = std::process::Command::new(st.layout().shim_dir().join(if cfg!(windows) { "composer.cmd" } else { "composer" }))
+            .args(["--version", "--no-interaction"])
+            .env("PATH", "/usr/bin:/bin") // no system PHP needed
+            .output()
+            .unwrap();
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        assert!(out.status.success() && stdout.contains("Composer version"), "{stdout}{}", String::from_utf8_lossy(&out.stderr));
+    }
+
     /// MariaDB (generated root password), MongoDB, Redis and Apache.
     #[tokio::test]
     #[ignore]

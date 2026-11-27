@@ -1,0 +1,124 @@
+{
+  "name": "composer",
+  "category": "tools",
+  "license": "MIT",
+  "homepage": "https://getcomposer.org",
+  "description": {
+    "en": "Composer, the PHP dependency manager, with its own PHP CLI",
+    "id": "Composer, pengelola dependensi PHP, beserta PHP CLI-nya sendiri"
+  },
+  "versions": [
+    {
+      "version": "2.11.3",
+      "assets": {
+        "linux-x64": {
+          "url": "https://getcomposer.org/download/2.11.3/composer.phar",
+          "sha256": "04f8b003da4e3a2459056591fbfebd02b4dc3e5adeb158616b90cf55a65113ec",
+          "format": "binary",
+          "bin_name": "composer.phar",
+          "extra": [
+            {
+              "url": "https://dl.static-php.dev/static-php-cli/bulk/php-8.3.32-cli-linux-x86_64.tar.gz",
+              "sha256": "7928396c17aabcd5bb074fe82e07b4cb693c6d04360a4415799a143a9f9686c6",
+              "format": "tar.gz",
+              "strip": 0,
+              "dest": "php"
+            }
+          ]
+        },
+        "linux-arm64": {
+          "url": "https://getcomposer.org/download/2.11.3/composer.phar",
+          "sha256": "04f8b003da4e3a2459056591fbfebd02b4dc3e5adeb158616b90cf55a65113ec",
+          "format": "binary",
+          "bin_name": "composer.phar",
+          "extra": [
+            {
+              "url": "https://dl.static-php.dev/static-php-cli/bulk/php-8.3.32-cli-linux-aarch64.tar.gz",
+              "sha256": "4c29858ecfa30d93e854d17494f422b593afa6da8ec80ae979191e69604dc955",
+              "format": "tar.gz",
+              "strip": 0,
+              "dest": "php"
+            }
+          ]
+        },
+        "macos-x64": {
+          "url": "https://getcomposer.org/download/2.11.3/composer.phar",
+          "sha256": "04f8b003da4e3a2459056591fbfebd02b4dc3e5adeb158616b90cf55a65113ec",
+          "format": "binary",
+          "bin_name": "composer.phar",
+          "extra": [
+            {
+              "url": "https://dl.static-php.dev/static-php-cli/bulk/php-8.3.32-cli-macos-x86_64.tar.gz",
+              "sha256": "6e059d66d149f2faa1d216e494a660752ef7e5769f2d4fded9a0e089574949a2",
+              "format": "tar.gz",
+              "strip": 0,
+              "dest": "php"
+            }
+          ]
+        },
+        "macos-arm64": {
+          "url": "https://getcomposer.org/download/2.11.3/composer.phar",
+          "sha256": "04f8b003da4e3a2459056591fbfebd02b4dc3e5adeb158616b90cf55a65113ec",
+          "format": "binary",
+          "bin_name": "composer.phar",
+          "extra": [
+            {
+              "url": "https://dl.static-php.dev/static-php-cli/bulk/php-8.3.32-cli-macos-aarch64.tar.gz",
+              "sha256": "ac297da5c45c525c660b8d0c73f5aa478ad9005d7c85096dc841220aa9c192e4",
+              "format": "tar.gz",
+              "strip": 0,
+              "dest": "php"
+            }
+          ]
+        },
+        "windows-x64": {
+          "url": "https://getcomposer.org/download/2.11.3/composer.phar",
+          "sha256": "04f8b003da4e3a2459056591fbfebd02b4dc3e5adeb158616b90cf55a65113ec",
+          "format": "binary",
+          "bin_name": "composer.phar",
+          "extra": [
+            {
+              "url": "https://dl.static-php.dev/static-php-cli/windows/spc-max/php-8.3.30-cli-win.zip",
+              "sha256": "f56246d10eb1dd8b03cdb529d9bc7190bdc249a7c0f2b5dd172bfd37d2a27db6",
+              "format": "zip",
+              "strip": 0,
+              "dest": "php"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "module_files": {
+    "composer": "#!/bin/sh\n# Runs Composer with the PHP CLI bundled in this module; works through the PATH shim (a symlink).\nself=$(readlink \"$0\" 2>/dev/null) || self=$0\ndir=$(dirname \"$self\")\nexec \"$dir/php/php\" \"$dir/composer.phar\" \"$@\"\n",
+    "composer.cmd": "@\"%~dp0php\\php.exe\" \"%~dp0composer.phar\" %*\r\n"
+  },
+  "setup": {
+    "commands": [
+      [
+        "{{prefix}}/php/php",
+        "-r",
+        "chmod(\"composer\", 0755);"
+      ],
+      [
+        "{{prefix}}/composer",
+        "--version",
+        "--no-interaction"
+      ]
+    ],
+    "commands_windows": [
+      [
+        "{{prefix}}/php/php.exe",
+        "{{prefix}}/composer.phar",
+        "--version",
+        "--no-interaction"
+      ]
+    ]
+  },
+  "shims": {
+    "composer": "composer"
+  },
+  "shims_windows": {
+    "composer": "composer.cmd"
+  }
+}

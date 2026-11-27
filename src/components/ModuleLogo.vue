@@ -11,7 +11,8 @@ const logo = computed(() => MODULE_LOGOS[props.name]);
 
 <template>
   <span v-if="logo" class="tile logo">
-    <svg viewBox="0 0 24 24" width="26" height="26" role="img" :aria-label="name">
+    <img v-if="'src' in logo" :src="logo.src" :alt="name" height="36" />
+    <svg v-else viewBox="0 0 24 24" width="26" height="26" role="img" :aria-label="name">
       <path :d="logo.path" :fill="logo.color" />
     </svg>
   </span>
@@ -23,5 +24,10 @@ const logo = computed(() => MODULE_LOGOS[props.name]);
 .logo {
   background: #fff;
   box-shadow: inset 0 0 0 1px var(--line);
+}
+
+.logo img {
+  width: auto;
+  height: 36px;
 }
 </style>

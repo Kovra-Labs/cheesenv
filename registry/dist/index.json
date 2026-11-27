@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "updated": "2026-11-27T03:24:23.255Z",
+  "updated": "2026-11-27T12:24:35.725Z",
   "modules": [
     {
       "name": "apache",
@@ -13,6 +13,18 @@
       "manifest_sha256": "aaf2fdfbde9af56ffceaa30914dc31f2a1258bfc9d5e84a72a53f8d2ca67d289",
       "license": "Apache-2.0",
       "homepage": "https://httpd.apache.org"
+    },
+    {
+      "name": "composer",
+      "category": "tools",
+      "description": {
+        "en": "Composer, the PHP dependency manager, with its own PHP CLI",
+        "id": "Composer, pengelola dependensi PHP, beserta PHP CLI-nya sendiri"
+      },
+      "latest": "2.11.3",
+      "manifest_sha256": "78b5024f09da97dc6a2ef517b93061e1e7c42d32296f62cf5bc5456b189b5c10",
+      "license": "MIT",
+      "homepage": "https://getcomposer.org"
     },
     {
       "name": "mariadb",
