@@ -26,6 +26,8 @@ Cara menulis:
 
 ## [Belum dirilis]
 
+## [0.2.0] - 2026-11-27
+
 ### Ditambahkan
 
 - Pilihan warna aksen (Keju, Biru, Teal, Ungu) di Pengaturan → Umum.

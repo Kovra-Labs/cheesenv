@@ -5,6 +5,8 @@ Keep both files in step: same versions, same entries.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-27
+
 ### Added
 
 - Accent colour choice (Cheese, Blue, Teal, Violet) in Settings → General.
