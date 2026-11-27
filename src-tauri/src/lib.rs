@@ -1,3 +1,4 @@
+mod autostart;
 mod commands;
 mod download;
 mod error;
@@ -46,6 +47,7 @@ pub fn run() {
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| tray::show_main(app)))
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(autostart::plugin())
         .manage(updater::PendingUpdate::default())
         .manage(terminal::Terminals::default())
         .setup(|app| {
@@ -53,6 +55,7 @@ pub fn run() {
             let settings_path = app.path().app_config_dir()?.join("settings.json");
             let settings = Settings::load(&settings_path);
             let lang = settings.language.clone();
+            let launch_at_login = settings.launch_at_login;
 
             let client = reqwest::Client::builder()
                 .user_agent(format!("CheesEnv/{}", app.package_info().version))
@@ -76,6 +79,17 @@ pub fn run() {
             state.layout().ensure()?;
             app.manage(state);
             tray::create(&handle, &lang)?;
+
+            // The window is created hidden; a login launch keeps it in the tray.
+            if !autostart::started_hidden() {
+                tray::show_main(&handle);
+            }
+            // Re-sync the login entry (it follows the installed app, not a dev build).
+            if !cfg!(debug_assertions) {
+                if let Err(e) = autostart::sync(&handle, launch_at_login) {
+                    eprintln!("[cheesenv] {e}");
+                }
+            }
 
             // Built-in panels: installed/updated in the background on every start.
             let panels_handle = handle.clone();
