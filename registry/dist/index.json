@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "updated": "2026-11-26T03:04:17.579Z",
+  "updated": "2026-11-27T03:24:23.255Z",
   "modules": [
     {
       "name": "apache",
@@ -10,7 +10,7 @@
         "id": "Apache HTTP Server dengan dukungan .htaccess dan PHP-FPM"
       },
       "latest": "2.4.71",
-      "manifest_sha256": "81792d8595d79ae56dee2f77690c095bd7ed7864b8818e00e2adf5cd65615f7c",
+      "manifest_sha256": "aaf2fdfbde9af56ffceaa30914dc31f2a1258bfc9d5e84a72a53f8d2ca67d289",
       "license": "Apache-2.0",
       "homepage": "https://httpd.apache.org"
     },
@@ -64,7 +64,7 @@
         "id": "Web server dan reverse proxy berperforma tinggi"
       },
       "latest": "1.30.5",
-      "manifest_sha256": "01e1421471821769e264b8a33c8e2dcef810ef04e062e232ad631d730a36a0f9",
+      "manifest_sha256": "e38c1ace803dda35b4abf8bcbaf8bd7f517ec6869bb8fe25d08a86377a4f925a",
       "license": "BSD-2-Clause",
       "homepage": "https://nginx.org"
     },
@@ -88,7 +88,7 @@
         "id": "Panel web pgAdmin 4 untuk mengelola PostgreSQL"
       },
       "latest": "9.18",
-      "manifest_sha256": "c7e7ac6eb41515bab7dba1348b4f6e3effc040cc54cae04a8183ac059cd26275",
+      "manifest_sha256": "a56009a3e87b02beaebc0cce9b898159d69ec55f31079912474a65540b8bea53",
       "license": "PostgreSQL",
       "homepage": "https://www.pgadmin.org"
     },
@@ -112,7 +112,7 @@
         "id": "Panel web untuk mengelola database MySQL dan MariaDB"
       },
       "latest": "5.2.3",
-      "manifest_sha256": "3d1597d79f79e9e2eafed52e1d86f8504369bdb8609708c11cc992beef9ba002",
+      "manifest_sha256": "e735ad3c5a2efbb2992f8acbbcae043bd3b713a14198219ee1b6fa50a49a3a32",
       "license": "GPL-2.0",
       "homepage": "https://www.phpmyadmin.net"
     },

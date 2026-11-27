@@ -1,7 +1,7 @@
 name: Registry
 
 # Publishes the signed module registry (registry/dist, built locally with
-# `npm run registry build`) to GitHub Pages: https://pipsyrs.github.io/stackyard
+# `npm run registry build`) to GitHub Pages: https://kovra-labs.github.io/cheesenv
 on:
   push:
     branches: [main]

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Stackyard registry tool.
+// CheesEnv registry tool.
 //   keygen [--key <path>]            create an Ed25519 signing key + src-tauri/registry.pub
 //   hash                             fill empty "sha256" fields by downloading assets
 //   build  [--key <path>] [--out d]  write dist/ (index.json, .minisig, modules/*.json)
@@ -19,7 +19,7 @@ const opt = (name, def) => {
   const i = args.indexOf(`--${name}`);
   return i >= 0 ? args[i + 1] : def;
 };
-const keyPath = opt('key', process.env.STACKYARD_REGISTRY_KEY ?? path.join(os.homedir(), '.stackyard-registry', 'minisign.key.json'));
+const keyPath = opt('key', process.env.CHEESENV_REGISTRY_KEY ?? path.join(os.homedir(), '.cheesenv-registry', 'minisign.key.json'));
 
 function keygen() {
   if (fs.existsSync(keyPath)) throw new Error(`refusing to overwrite existing key ${keyPath}`);
@@ -47,7 +47,7 @@ function sign(data, fileName) {
   const trusted = `timestamp:${Math.floor(Date.now() / 1000)}\tfile:${fileName}\thashed`;
   const globalSig = crypto.sign(null, Buffer.concat([sig, Buffer.from(trusted)]), key);
   return [
-    'untrusted comment: signature from stackyard registry tool',
+    'untrusted comment: signature from cheesenv registry tool',
     Buffer.concat([Buffer.from('ED'), keyId, sig]).toString('base64'),
     `trusted comment: ${trusted}`,
     globalSig.toString('base64'),

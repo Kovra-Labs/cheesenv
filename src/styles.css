@@ -9,19 +9,20 @@
   --ink-2: #556274;
   --ink-3: #8a96a8;
 
-  --primary: #2196f3;
-  --primary-hover: #1e88e5;
-  --primary-active: #1976d2;
-  /* #2196F3 is too light for small text on white; text uses a deeper shade. */
-  --primary-text: #1565c0;
-  --primary-soft: #e3f2fd;
-  --on-primary: #ffffff;
-  --ring: rgb(33 150 243 / 0.35);
+  /* Brand yellow #ECBB01: too light for white text or small text on white,
+     so text on it is near-black and primary-colored text uses a deep amber. */
+  --primary: #ecbb01;
+  --primary-hover: #d9ab00;
+  --primary-active: #c49a00;
+  --primary-text: #7a5a00;
+  --primary-soft: #fdf5d3;
+  --on-primary: #1f1600;
+  --ring: rgb(236 187 1 / 0.45);
 
   --success: #15803d;
   --success-soft: #dcfce7;
-  --warn: #b45309;
-  --warn-soft: #fef3c7;
+  --warn: #c2410c;
+  --warn-soft: #ffedd5;
   --danger: #dc2626;
   --danger-hover: #b91c1c;
   --danger-soft: #fee2e2;
@@ -56,15 +57,15 @@
     --ink: #e7eef8;
     --ink-2: #9fb0c6;
     --ink-3: #6c7d96;
-    --primary-hover: #42a5f5;
-    --primary-active: #1e88e5;
-    --primary-text: #64b5f6;
-    --primary-soft: rgb(33 150 243 / 0.16);
-    --ring: rgb(66 165 245 / 0.45);
+    --primary-hover: #f5c92e;
+    --primary-active: #d9ab00;
+    --primary-text: #f5cd3d;
+    --primary-soft: rgb(236 187 1 / 0.14);
+    --ring: rgb(236 187 1 / 0.45);
     --success: #4ade80;
     --success-soft: rgb(34 197 94 / 0.14);
-    --warn: #fbbf24;
-    --warn-soft: rgb(245 158 11 / 0.14);
+    --warn: #fb923c;
+    --warn-soft: rgb(249 115 22 / 0.15);
     --danger: #f87171;
     --danger-hover: #ef4444;
     --danger-soft: rgb(239 68 68 / 0.15);
@@ -86,15 +87,15 @@
   --ink: #e7eef8;
   --ink-2: #9fb0c6;
   --ink-3: #6c7d96;
-  --primary-hover: #42a5f5;
-  --primary-active: #1e88e5;
-  --primary-text: #64b5f6;
-  --primary-soft: rgb(33 150 243 / 0.16);
-  --ring: rgb(66 165 245 / 0.45);
+  --primary-hover: #f5c92e;
+  --primary-active: #d9ab00;
+  --primary-text: #f5cd3d;
+  --primary-soft: rgb(236 187 1 / 0.14);
+  --ring: rgb(236 187 1 / 0.45);
   --success: #4ade80;
   --success-soft: rgb(34 197 94 / 0.14);
-  --warn: #fbbf24;
-  --warn-soft: rgb(245 158 11 / 0.14);
+  --warn: #fb923c;
+  --warn-soft: rgb(249 115 22 / 0.15);
   --danger: #f87171;
   --danger-hover: #ef4444;
   --danger-soft: rgb(239 68 68 / 0.15);
@@ -231,11 +232,11 @@ a {
   --btn-bg-hover: var(--primary-hover);
   --btn-ink: var(--on-primary);
   --btn-line: transparent;
-  box-shadow: 0 2px 8px rgb(33 150 243 / 0.3);
+  box-shadow: 0 2px 8px rgb(196 154 0 / 0.3);
 }
 
 .btn.primary:hover:not(:disabled) {
-  box-shadow: 0 6px 18px rgb(33 150 243 / 0.38);
+  box-shadow: 0 6px 18px rgb(196 154 0 / 0.38);
 }
 
 .btn.primary:active:not(:disabled) {
@@ -637,7 +638,7 @@ a {
   position: absolute;
   inset: 0 auto 0 0;
   border-radius: inherit;
-  background: linear-gradient(90deg, var(--primary), #64b5f6);
+  background: linear-gradient(90deg, var(--primary), #f7d65c);
   transition: width 300ms var(--ease);
 }
 

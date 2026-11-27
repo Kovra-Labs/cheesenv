@@ -267,7 +267,7 @@ pub(crate) async fn install_with_companions(
             // No build for this platform, or being installed by `ensure_panels` right now.
             Ok(false) | Err(AppError::Busy) => {}
             Err(e) => {
-                eprintln!("[stackyard] companion {companion} of {name}: {e}");
+                eprintln!("[cheesenv] companion {companion} of {name}: {e}");
                 outcome.companion_errors.push(format!("{companion}: {e}"));
             }
         }
@@ -403,7 +403,7 @@ async fn install_manifest(state: &AppState, manifest: &ModuleManifest, version: 
                 s.runtimes.insert(name.to_string(), version.to_string());
                 Ok(())
             })?,
-            Err(e) => eprintln!("[stackyard] default {name} {version}: {e}"),
+            Err(e) => eprintln!("[cheesenv] default {name} {version}: {e}"),
         }
     }
     Ok(())
@@ -538,7 +538,7 @@ pub async fn start_service_inner(state: &AppState, id: &str) -> AppResult<()> {
     if projects::WEB_SERVERS.contains(&name.as_str()) {
         // Never blocks the server itself: it still serves www/ on localhost.
         if let Err(e) = ensure_vhost_include(state, &modules::load_installed(&state.layout(), &name, &version)?) {
-            eprintln!("[stackyard] vhost include for {id}: {e}");
+            eprintln!("[cheesenv] vhost include for {id}: {e}");
         }
     }
     let (launch, port, m) = state.launch_for(id)?;
@@ -558,7 +558,7 @@ pub async fn start_service_inner(state: &AppState, id: &str) -> AppResult<()> {
         }
         // Never blocks the server itself: it still serves www/ on localhost.
         if let Err(e) = write_server_vhosts(state, &m, port, &list) {
-            eprintln!("[stackyard] vhosts for {id}: {e}");
+            eprintln!("[cheesenv] vhosts for {id}: {e}");
         }
     }
     if !modules::is_initialized(&layout, &m) && m.service.as_ref().is_some_and(|s| s.init.is_some()) {
@@ -583,7 +583,7 @@ pub struct Credentials {
     storage: crate::secrets::Storage,
 }
 
-/// Returns the generated database login. Only Stackyard's own services.
+/// Returns the generated database login. Only CheesEnv's own services.
 #[tauri::command]
 pub fn get_credentials(state: State<'_, AppState>, id: String) -> Cmd<Credentials> {
     let (name, version) = parse_service_id(&id)?;
@@ -629,7 +629,7 @@ async fn stop_idle_panels(state: &AppState) {
         }
         if !serving {
             if let Err(e) = state.supervisor.stop(&id).await {
-                eprintln!("[stackyard] stopping {id}: {e}");
+                eprintln!("[cheesenv] stopping {id}: {e}");
             }
         }
     }
@@ -776,7 +776,7 @@ pub async fn open_panel(app: AppHandle, state: State<'_, AppState>, id: String) 
         .map_err(|e| AppError::Internal(e.to_string()))
 }
 
-/// Opens one of Stackyard's own folders; arbitrary paths are not accepted.
+/// Opens one of CheesEnv's own folders; arbitrary paths are not accepted.
 #[tauri::command]
 pub fn open_folder(app: AppHandle, state: State<'_, AppState>, kind: String, id: Option<String>) -> Cmd<()> {
     let layout = state.layout();
@@ -814,7 +814,7 @@ pub struct WebServerView {
     /// Port of the projects' HTTPS (nginx, once HTTPS is enabled).
     https_port: Option<u16>,
     running: bool,
-    /// Its config includes Stackyard's vhosts (reinstall older installs).
+    /// Its config includes CheesEnv's vhosts (reinstall older installs).
     vhosts: bool,
     /// Linux nginx: whether it may use ports 80/443 (`None`: not applicable).
     low_ports: Option<bool>,

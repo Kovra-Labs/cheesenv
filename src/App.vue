@@ -46,7 +46,7 @@ watch(
       <div class="brand">
         <img :src="logoUrl" alt="" width="38" height="38" />
         <div>
-          <strong>Stackyard</strong>
+          <strong>CheesEnv</strong>
           <span>{{ t('app.tagline') }}</span>
         </div>
       </div>
@@ -144,7 +144,7 @@ watch(
   width: 38px;
   height: 38px;
   flex: none;
-  filter: drop-shadow(0 4px 10px rgb(33 150 243 / 0.35));
+  filter: drop-shadow(0 4px 10px rgb(196 154 0 / 0.3));
 }
 
 .brand div {

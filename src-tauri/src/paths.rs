@@ -66,7 +66,7 @@ impl Layout {
             .filter(short)
             .or_else(|| Some(std::env::temp_dir()).filter(short))
             .unwrap_or_else(|| if cfg!(unix) { PathBuf::from("/tmp") } else { std::env::temp_dir() });
-        base.join(format!("stackyard-{hash}")).join(format!("{name}-{version}"))
+        base.join(format!("cheesenv-{hash}")).join(format!("{name}-{version}"))
     }
 
     /// Creates the socket dir as private (0700) and refuses one that another
@@ -105,8 +105,8 @@ impl Layout {
 }
 
 const WELCOME_PAGE: &str = "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">\
-<title>Stackyard</title></head><body style=\"font-family:system-ui;max-width:40rem;margin:4rem auto\">\
-<h1>It works!</h1><p>This page is served by Stackyard from the <code>www</code> folder.</p></body></html>\n";
+<title>CheesEnv</title></head><body style=\"font-family:system-ui;max-width:40rem;margin:4rem auto\">\
+<h1>It works!</h1><p>This page is served by CheesEnv from the <code>www</code> folder.</p></body></html>\n";
 
 #[cfg(unix)]
 fn create_private_dir(dir: &Path) -> AppResult<()> {

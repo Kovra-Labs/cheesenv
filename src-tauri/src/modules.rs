@@ -9,8 +9,8 @@ use crate::extract::extract;
 use crate::paths::{unix_now, validate_name, validate_version, write_atomic, Layout};
 use crate::registry::{platform_key, InitSpec, ModuleManifest, PanelSpec, ServiceSpec};
 
-const META_FILE: &str = ".stackyard-module.json";
-const INIT_MARKER: &str = ".stackyard-initialized";
+const META_FILE: &str = ".cheesenv-module.json";
+const INIT_MARKER: &str = ".cheesenv-initialized";
 const INIT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(180);
 /// Setup may download and build packages (e.g. pgAdmin's ~110 wheels).
 const SETUP_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(20 * 60);
@@ -385,7 +385,7 @@ async fn run_logged(
     {
         use std::io::Write;
         let mut l = &log;
-        let _ = writeln!(l, "[stackyard {}] {step}: {}", unix_now(), program.display());
+        let _ = writeln!(l, "[cheesenv {}] {step}: {}", unix_now(), program.display());
     }
     let mut cmd = tokio::process::Command::new(program);
     cmd.args(args)

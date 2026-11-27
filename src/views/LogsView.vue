@@ -31,7 +31,7 @@ const shown = computed(() => {
 function lineClass(l: string) {
   if (/\b(error|fatal|emerg|crit|alert)\b/i.test(l)) return 'err';
   if (/\b(warn|warning|notice)\b/i.test(l)) return 'warn';
-  if (l.startsWith('[stackyard')) return 'meta';
+  if (l.startsWith('[cheesenv')) return 'meta';
   return '';
 }
 
@@ -289,11 +289,11 @@ onUnmounted(stop);
 }
 
 .out .warn {
-  color: #fbbf24;
+  color: #fb923c;
 }
 
 .out .meta {
-  color: #64b5f6;
+  color: #f5cd3d;
 }
 
 .none {

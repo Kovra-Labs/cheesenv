@@ -365,11 +365,11 @@ fn is_safe_relative(s: &str) -> bool {
 
 /// Registry every install comes from, fixed when the app is built so users
 /// never have to configure it. Override for your own server with
-/// `STACKYARD_REGISTRY_URL=https://registry.example.com npm run tauri build`;
+/// `CHEESENV_REGISTRY_URL=https://registry.example.com npm run tauri build`;
 /// its `index.json` must still be signed with `registry.pub`.
-pub const REGISTRY_URL: &str = match option_env!("STACKYARD_REGISTRY_URL") {
+pub const REGISTRY_URL: &str = match option_env!("CHEESENV_REGISTRY_URL") {
     Some(url) => url,
-    None => "https://pipsyrs.github.io/stackyard",
+    None => "https://kovra-labs.github.io/cheesenv",
 };
 
 pub struct Registry<'a> {

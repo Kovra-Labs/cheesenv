@@ -1,6 +1,6 @@
 //! `.test` domains in the system hosts file (PRD §7 local domains).
 //!
-//! Stackyard only ever owns one marked block, holding `127.0.0.1 <name>.test`
+//! CheesEnv only ever owns one marked block, holding `127.0.0.1 <name>.test`
 //! lines. Writing it needs administrator rights: the elevated helper
 //! (`--hosts-sync <domains…>`, see admin.rs) re-validates every name and
 //! touches nothing outside the block.
@@ -13,8 +13,8 @@ use crate::error::{AppError, AppResult};
 use crate::projects::is_valid_domain;
 
 pub const HELPER_FLAG: &str = "--hosts-sync";
-const BEGIN: &str = "# BEGIN Stackyard (managed automatically, do not edit)";
-const END: &str = "# END Stackyard";
+const BEGIN: &str = "# BEGIN CheesEnv (managed automatically, do not edit)";
+const END: &str = "# END CheesEnv";
 
 pub fn hosts_path() -> PathBuf {
     if cfg!(windows) {
@@ -25,7 +25,7 @@ pub fn hosts_path() -> PathBuf {
     }
 }
 
-/// Domains currently listed inside Stackyard's block.
+/// Domains currently listed inside CheesEnv's block.
 pub fn managed(content: &str) -> BTreeSet<String> {
     let mut inside = false;
     let mut out = BTreeSet::new();
@@ -42,7 +42,7 @@ pub fn managed(content: &str) -> BTreeSet<String> {
     out
 }
 
-/// `content` with Stackyard's block replaced by one for `domains` (removed
+/// `content` with CheesEnv's block replaced by one for `domains` (removed
 /// when empty). Everything outside the block is kept byte for byte.
 pub fn apply(content: &str, domains: &BTreeSet<String>) -> String {
     let eol = if content.contains("\r\n") { "\r\n" } else { "\n" };
@@ -79,11 +79,11 @@ pub fn in_sync(domains: &BTreeSet<String>) -> bool {
     std::fs::read_to_string(hosts_path()).is_ok_and(|c| &managed(&c) == domains)
 }
 
-/// Elevated helper job: `stackyard --hosts-sync a.test b.test`.
+/// Elevated helper job: `cheesenv --hosts-sync a.test b.test`.
 pub fn helper(args: &[String]) -> i32 {
     let domains: BTreeSet<String> = args.iter().cloned().collect();
     if domains.len() > 1000 || !domains.iter().all(|d| is_valid_domain(d)) {
-        eprintln!("stackyard: invalid domain list");
+        eprintln!("cheesenv: invalid domain list");
         return EXIT_INVALID;
     }
     let path = hosts_path();
@@ -93,7 +93,7 @@ pub fn helper(args: &[String]) -> i32 {
         if updated == content {
             return Ok(());
         }
-        let backup = path.with_file_name("hosts.stackyard-backup");
+        let backup = path.with_file_name("hosts.cheesenv-backup");
         if !backup.exists() {
             std::fs::write(&backup, &content)?;
         }
@@ -103,13 +103,13 @@ pub fn helper(args: &[String]) -> i32 {
     match result {
         Ok(()) => 0,
         Err(e) => {
-            eprintln!("stackyard: {}: {e}", path.display());
+            eprintln!("cheesenv: {}: {e}", path.display());
             EXIT_IO
         }
     }
 }
 
-/// Writes Stackyard's hosts block through the elevated helper (one admin prompt).
+/// Writes CheesEnv's hosts block through the elevated helper (one admin prompt).
 pub async fn sync_elevated(domains: &BTreeSet<String>) -> AppResult<()> {
     if !domains.iter().all(|d| is_valid_domain(d)) {
         return Err(AppError::InvalidInput("domain".into()));
@@ -118,7 +118,7 @@ pub async fn sync_elevated(domains: &BTreeSet<String>) -> AppResult<()> {
         return Ok(());
     }
     let args: Vec<String> = std::iter::once(HELPER_FLAG.to_string()).chain(domains.iter().cloned()).collect();
-    admin::run_elevated(&args, "Stackyard needs to update the hosts file for your .test domains.").await?;
+    admin::run_elevated(&args, "CheesEnv needs to update the hosts file for your .test domains.").await?;
     if in_sync(domains) {
         Ok(())
     } else {
@@ -166,7 +166,7 @@ mod tests {
     #[test]
     fn helper_rejects_bad_names() {
         let args = |v: &[&str]| v.iter().map(|s| s.to_string()).collect::<Vec<_>>();
-        assert_eq!(admin::helper_main(&args(&["stackyard", HELPER_FLAG, "bank.com"])), Some(EXIT_INVALID));
+        assert_eq!(admin::helper_main(&args(&["cheesenv", HELPER_FLAG, "bank.com"])), Some(EXIT_INVALID));
         assert_eq!(helper(&args(&["a.test\n1.2.3.4 x.test"])), EXIT_INVALID);
     }
 }

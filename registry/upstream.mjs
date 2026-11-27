@@ -17,7 +17,7 @@ import { fileURLToPath } from 'node:url';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const modulesDir = path.join(here, 'modules');
-const BINARIES_REPO = process.env.STACKYARD_BINARIES_REPO ?? 'pipsyrs/stackyard';
+const BINARIES_REPO = process.env.CHEESENV_BINARIES_REPO ?? 'Kovra-Labs/cheesenv';
 const LINES = 2;
 // Node's default 250 ms per address is too short for some CDNs on slow links.
 net.setDefaultAutoSelectFamilyAttemptTimeout(2000);

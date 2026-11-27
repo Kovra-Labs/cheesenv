@@ -164,7 +164,7 @@ export interface WebServer {
   /** HTTPS port of the projects (nginx with HTTPS enabled). */
   https_port: number | null;
   running: boolean;
-  /** Its config includes Stackyard's vhosts. */
+  /** Its config includes CheesEnv's vhosts. */
   vhosts: boolean;
   /** Linux nginx: may use ports 80/443; null when not applicable. */
   low_ports: boolean | null;

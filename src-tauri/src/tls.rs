@@ -1,4 +1,4 @@
-//! Local HTTPS (PRD §7): a Stackyard certificate authority, trusted by the OS
+//! Local HTTPS (PRD §7): a CheesEnv certificate authority, trusted by the OS
 //! once, signs one certificate covering every project domain.
 //!
 //! The CA is name-constrained to `.test`, `localhost` and loopback addresses:
@@ -20,17 +20,17 @@ use crate::projects::is_valid_domain;
 use crate::registry::sha256_hex;
 
 pub const HELPER_FLAG: &str = "--trust-ca";
-const CA_NAME: &str = "Stackyard Local CA";
-const CA_CERT: &str = "stackyard-ca.pem";
-const CA_KEY: &str = "stackyard-ca-key.pem";
+const CA_NAME: &str = "CheesEnv Local CA";
+const CA_CERT: &str = "cheesenv-ca.pem";
+const CA_KEY: &str = "cheesenv-ca-key.pem";
 /// Holds the SHA-256 of the CA certificate the OS was told to trust.
-const TRUSTED_MARKER: &str = "stackyard-ca.trusted";
+const TRUSTED_MARKER: &str = "cheesenv-ca.trusted";
 const SITE_CERT: &str = "projects.pem";
 const SITE_KEY: &str = "projects-key.pem";
 const SITE_META: &str = "projects.json";
 /// File name of the CA inside the system trust store.
 #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
-const STORE_NAME: &str = "stackyard-local-ca.crt";
+const STORE_NAME: &str = "cheesenv-local-ca.crt";
 const CA_DAYS: i64 = 3650;
 /// Within the 398-day limit browsers apply to server certificates.
 const SITE_DAYS: i64 = 397;
@@ -56,7 +56,7 @@ fn ca_params() -> CertificateParams {
     let mut p = CertificateParams::default();
     let mut dn = DistinguishedName::new();
     dn.push(DnType::CommonName, CA_NAME);
-    dn.push(DnType::OrganizationName, "Stackyard");
+    dn.push(DnType::OrganizationName, "CheesEnv");
     p.distinguished_name = dn;
     p.is_ca = IsCa::Ca(BasicConstraints::Constrained(0));
     p.key_usages = vec![KeyUsagePurpose::KeyCertSign, KeyUsagePurpose::CrlSign, KeyUsagePurpose::DigitalSignature];
@@ -201,21 +201,21 @@ fn is_single_cert_pem(pem: &str) -> bool {
         && t.matches("-----END ").count() == 1
 }
 
-/// Elevated helper job: `stackyard --trust-ca <file.pem>`. The certificate is
-/// copied (after validation) to Stackyard's own fixed name in the store.
+/// Elevated helper job: `cheesenv --trust-ca <file.pem>`. The certificate is
+/// copied (after validation) to CheesEnv's own fixed name in the store.
 pub fn trust_helper(args: &[String]) -> i32 {
     use std::io::Read;
     let [path] = args else { return EXIT_INVALID };
     let mut pem = String::new();
     let read = std::fs::File::open(path).and_then(|f| f.take(MAX_PEM).read_to_string(&mut pem));
     if read.is_err() || !is_single_cert_pem(&pem) {
-        eprintln!("stackyard: {path}: not a single PEM certificate");
+        eprintln!("cheesenv: {path}: not a single PEM certificate");
         return EXIT_INVALID;
     }
     match install_in_store(pem.trim()) {
         Ok(()) => 0,
         Err(e) => {
-            eprintln!("stackyard: trust store: {e}");
+            eprintln!("cheesenv: trust store: {e}");
             EXIT_IO
         }
     }
@@ -238,7 +238,7 @@ fn run_tool(program: &Path, args: &[&std::ffi::OsStr]) -> std::io::Result<()> {
 /// the store tool (root's or the admin's own temp folder).
 #[cfg_attr(target_os = "linux", allow(dead_code))]
 fn private_copy(pem: &str) -> std::io::Result<(PathBuf, PathBuf)> {
-    let dir = std::env::temp_dir().join(format!("stackyard-ca-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("cheesenv-ca-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir(&dir)?;
     let file = dir.join(STORE_NAME);
@@ -368,7 +368,7 @@ pub async fn enable(layout: &Layout) -> AppResult<BrowserTrust> {
     let ca = ensure_ca(layout)?;
     if !is_trusted(layout) {
         let args = [HELPER_FLAG.to_string(), ca.to_string_lossy().into_owned()];
-        admin::run_elevated(&args, "Stackyard needs to trust its local certificate authority for HTTPS on .test domains.")
+        admin::run_elevated(&args, "CheesEnv needs to trust its local certificate authority for HTTPS on .test domains.")
             .await?;
         mark_trusted(layout)?;
     }

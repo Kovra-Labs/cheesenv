@@ -1,8 +1,8 @@
 //! Web panels (phpMyAdmin, pgAdmin) that manage another module's services.
 //!
-//! Before every start Stackyard writes `{{run}}/panel.json` with the port, a
+//! Before every start CheesEnv writes `{{run}}/panel.json` with the port, a
 //! fresh access token and the target services (host, port, user; never
-//! passwords). The panel's own config reads it, and Stackyard reads the token
+//! passwords). The panel's own config reads it, and CheesEnv reads the token
 //! back to build the URL it opens.
 
 use std::net::{Ipv4Addr, SocketAddr, TcpStream};

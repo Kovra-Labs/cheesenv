@@ -112,7 +112,7 @@ export function localizedNotes(notes: string | null, i18n: Record<string, string
   return i18n?.[locale] ?? notes;
 }
 
-const SEEN_KEY = 'stackyard.seenVersion';
+const SEEN_KEY = 'cheesenv.seenVersion';
 
 /**
  * Versions the user has not seen since their last launch, newest first, and

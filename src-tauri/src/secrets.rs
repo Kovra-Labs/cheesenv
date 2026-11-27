@@ -6,10 +6,10 @@ use crate::error::{AppError, AppResult};
 use crate::paths::Layout;
 
 #[cfg(not(test))]
-const KEYRING_SERVICE: &str = "Stackyard";
+const KEYRING_SERVICE: &str = "CheesEnv";
 /// Tests never touch the user's real credentials.
 #[cfg(test)]
-const KEYRING_SERVICE: &str = "Stackyard-test";
+const KEYRING_SERVICE: &str = "CheesEnv-test";
 
 /// Where a database password lives. The OS keychain is preferred (PRD §8);
 /// the file fallback only exists for systems without a keychain service
@@ -54,7 +54,7 @@ pub fn store(layout: &Layout, name: &str, version: &str, password: &str) -> AppR
         let _ = std::fs::remove_file(fallback_path(layout, name, version));
         return Ok(Storage::Keychain);
     }
-    eprintln!("[stackyard] keychain unavailable, storing {id} password in a private file");
+    eprintln!("[cheesenv] keychain unavailable, storing {id} password in a private file");
     let path = fallback_path(layout, name, version);
     write_private(&path, password.as_bytes())?;
     Ok(Storage::File)

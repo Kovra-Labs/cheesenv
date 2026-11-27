@@ -3,8 +3,8 @@
 
 fn main() {
     // The elevated hosts helper exits before any window or tray is created.
-    if let Some(code) = stackyard_lib::run_helper() {
+    if let Some(code) = cheesenv_lib::run_helper() {
         std::process::exit(code);
     }
-    stackyard_lib::run()
+    cheesenv_lib::run()
 }

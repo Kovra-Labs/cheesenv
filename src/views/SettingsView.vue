@@ -319,7 +319,7 @@ async function saveDataDir() {
     <section v-if="store.info" class="card about">
       <img :src="logoUrl" alt="" width="56" height="56" />
       <div>
-        <h2>Stackyard</h2>
+        <h2>CheesEnv</h2>
         <p class="hint">{{ t('settings.version', { v: store.info.version, p: store.info.platform }) }} · MIT</p>
         <p class="hint">{{ t('settings.aboutText') }}</p>
       </div>

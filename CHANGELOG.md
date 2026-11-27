@@ -1,6 +1,6 @@
 # Catatan perubahan
 
-Semua perubahan penting Stackyard dicatat di sini, dengan terjemahan bahasa
+Semua perubahan penting CheesEnv dicatat di sini, dengan terjemahan bahasa
 Inggris di [`CHANGELOG.en.md`](CHANGELOG.en.md). Aplikasi menampilkan versi
 yang sesuai bahasa di Pengaturan: sebelum pembaruan dipasang, sekali sesudahnya
 ("Apa yang baru"), dan kapan saja di Pengaturan → Riwayat perubahan.
@@ -26,58 +26,21 @@ Cara menulis:
 
 ## [Belum dirilis]
 
-## [0.5.2] - 2026-11-26
-
-### Diubah
-
-- Logo aplikasi baru, termasuk ikon di tray sistem.
-
-## [0.5.1] - 2026-11-26
-
-### Diperbaiki
-
-- Catatan perubahan kini mengikuti bahasa aplikasi dan lebih ringkas.
-
-## [0.5.0] - 2026-11-26
+## [0.1.0] - 2026-11-27
 
 ### Ditambahkan
 
-- Catatan perubahan: lihat isi pembaruan sebelum memasangnya, ringkasan "Apa
-  yang baru" setelah update, dan riwayat lengkap di Pengaturan.
-
-## [0.4.0] - 2026-11-26
-
-### Ditambahkan
-
-- Projects: setiap folder di `~/Stackyard/www` langsung bisa dibuka di
-  `nama-folder.test`.
-- Terminal bawaan dengan tab, siap memakai runtime dan tools Stackyard.
+- Rilis pertama CheesEnv: kelola web server, runtime, dan database lokal di
+  Windows, macOS, dan Linux.
+- Module Hub: nginx, Apache, PHP, Node.js, Python, MySQL, MariaDB,
+  PostgreSQL, MongoDB, dan Redis, plus phpMyAdmin dan pgAdmin yang terpasang
+  otomatis bersama database-nya.
+- Projects: setiap folder di `~/CheesEnv/www` langsung bisa dibuka di
+  `nama-folder.test`, dengan versi PHP per project.
 - HTTPS lokal untuk domain `.test` tanpa peringatan browser.
 - Linux: project bisa dibuka tanpa `:8080` (port 80 dan 443).
-- Pilih versi PHP per project (8.4 atau 8.3).
-- PHP 8.4 dan 8.3 untuk Windows di Module Hub.
-
-### Diubah
-
-- nginx dan Apache yang sudah terpasang otomatis mendukung domain `.test`,
-  tanpa install ulang.
-
-## [0.3.0] - 2026-11-25
-
-### Ditambahkan
-
-- Module Node.js, Python, MariaDB, MongoDB, Redis, dan Apache di Module Hub.
-- phpMyAdmin dan pgAdmin terpasang otomatis bersama database-nya.
-- Node.js dan Python versi default langsung bisa dipakai dari terminal.
-- Stackyard hanya berjalan satu kali; membukanya lagi menampilkan jendela yang
-  sudah ada.
-
-### Diubah
-
-- Tampilan, warna, dan ikon aplikasi yang baru.
-
-### Diperbaiki
-
-- macOS: service gagal berjalan di beberapa komputer.
-- pgAdmin tidak menampilkan halaman web.
-- Ikon tombol stop dan ikon module yang tidak muncul.
+- Terminal bawaan dengan tab; Node.js dan Python versi default juga bisa
+  dipakai dari terminal biasa.
+- Ikon di tray sistem; menutup jendela membiarkan service tetap berjalan.
+- Pembaruan otomatis dengan catatan perubahan: lihat isinya sebelum memasang,
+  ringkasan "Apa yang baru" setelahnya, dan riwayat lengkap di Pengaturan.

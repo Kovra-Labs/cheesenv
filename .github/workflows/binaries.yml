@@ -59,7 +59,7 @@ jobs:
         run: |
           tag="$MODULE-$VERSION"
           gh release view "$tag" >/dev/null 2>&1 ||
-            gh release create "$tag" --prerelease --latest=false --title "$MODULE $VERSION (Stackyard build)" \
+            gh release create "$tag" --prerelease --latest=false --title "$MODULE $VERSION (CheesEnv build)" \
               --notes "Portable $MODULE $VERSION for Linux and macOS, built from the official source by .github/workflows/binaries.yml (run ${{ github.run_id }})."
           gh release upload "$tag" out/*.tar.gz --clobber
           sha256sum out/*.tar.gz

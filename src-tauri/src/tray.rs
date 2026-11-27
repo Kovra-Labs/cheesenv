@@ -9,8 +9,8 @@ const TRAY_ID: &str = "main";
 
 fn labels(lang: &str) -> [&'static str; 4] {
     match lang {
-        "en" => ["Open Stackyard", "Start all services", "Stop all services", "Quit"],
-        _ => ["Buka Stackyard", "Jalankan semua service", "Hentikan semua service", "Keluar"],
+        "en" => ["Open CheesEnv", "Start all services", "Stop all services", "Quit"],
+        _ => ["Buka CheesEnv", "Jalankan semua service", "Hentikan semua service", "Keluar"],
     }
 }
 
@@ -39,7 +39,7 @@ pub fn show_main(app: &AppHandle) {
 
 pub fn create(app: &AppHandle, lang: &str) -> tauri::Result<()> {
     let builder = TrayIconBuilder::with_id(TRAY_ID)
-        .tooltip("Stackyard")
+        .tooltip("CheesEnv")
         .menu(&build_menu(app, lang)?)
         .on_menu_event(|app, event| match event.id().as_ref() {
             "show" => show_main(app),
@@ -48,7 +48,7 @@ pub fn create(app: &AppHandle, lang: &str) -> tauri::Result<()> {
                 tauri::async_runtime::spawn(async move {
                     let state = app.state::<AppState>();
                     for f in start_all_inner(&state).await {
-                        eprintln!("[stackyard] tray start {} failed: {}", f.id, f.error);
+                        eprintln!("[cheesenv] tray start {} failed: {}", f.id, f.error);
                     }
                 });
             }

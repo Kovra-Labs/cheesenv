@@ -1,13 +1,13 @@
 [package]
-name = "stackyard"
-version = "0.5.2"
+name = "cheesenv"
+version = "0.1.0"
 description = "Cross-platform local development environment manager"
 license = "MIT"
 edition = "2021"
 rust-version = "1.82"
 
 [lib]
-name = "stackyard_lib"
+name = "cheesenv_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]

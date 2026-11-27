@@ -3,7 +3,7 @@
 
     python3.12 registry/pylock.py pgadmin4==9.19 --python 3.12 --module pgadmin
 
-Resolves the requirement for every Stackyard platform with `pip install
+Resolves the requirement for every CheesEnv platform with `pip install
 --dry-run --report` (wheels only, nothing is installed or executed), merges
 the results into one requirements file with environment markers and SHA-256
 hashes, and writes it into `registry/modules/<module>.json` under
@@ -133,7 +133,7 @@ def write_stub(stubs, name, version, deps):
     """A metadata-only wheel so `--platform` resolution can see the sdist."""
     dist = f"{canonicalize_name(name).replace('-', '_')}-{version}"
     meta = f"Metadata-Version: 2.1\nName: {name}\nVersion: {version}\n" + "".join(d + "\n" for d in deps)
-    wheel = "Wheel-Version: 1.0\nGenerator: stackyard-pylock\nRoot-Is-Purelib: true\nTag: py3-none-any\n"
+    wheel = "Wheel-Version: 1.0\nGenerator: cheesenv-pylock\nRoot-Is-Purelib: true\nTag: py3-none-any\n"
     files = {f"{dist}.dist-info/METADATA": meta, f"{dist}.dist-info/WHEEL": wheel}
     record = "".join(f"{p},,\n" for p in files) + f"{dist}.dist-info/RECORD,,\n"
     files[f"{dist}.dist-info/RECORD"] = record

@@ -83,7 +83,7 @@ impl From<serde_json::Error> for AppError {
 
 impl Serialize for AppError {
     fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-        eprintln!("[stackyard] {self}");
+        eprintln!("[cheesenv] {self}");
         let mut st = s.serialize_struct("AppError", 3)?;
         st.serialize_field("code", self.code())?;
         match self {

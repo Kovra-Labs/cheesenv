@@ -49,7 +49,7 @@ fn default_data_dir() -> PathBuf {
         .or_else(|| std::env::var_os("USERPROFILE"))
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from("."))
-        .join("Stackyard")
+        .join("CheesEnv")
 }
 
 /// Partial update sent by the settings page.
@@ -66,7 +66,7 @@ impl Settings {
     pub fn load(path: &Path) -> Self {
         match std::fs::read(path) {
             Ok(bytes) => serde_json::from_slice(&bytes).unwrap_or_else(|e| {
-                eprintln!("[stackyard] settings unreadable, using defaults: {e}");
+                eprintln!("[cheesenv] settings unreadable, using defaults: {e}");
                 Self::default()
             }),
             Err(_) => Self::default(),

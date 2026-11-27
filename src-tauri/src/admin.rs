@@ -2,7 +2,7 @@
 //! (pkexec, an AppleScript admin prompt or UAC) in a tiny helper mode that
 //! does one validated job and exits:
 //!   `--hosts-sync <name.test…>`  the hosts-file block (hosts.rs)
-//!   `--trust-ca <file.pem>`      installs Stackyard's local CA (tls.rs)
+//!   `--trust-ca <file.pem>`      installs CheesEnv's local CA (tls.rs)
 //!   `--grant-ports <nginx>`      Linux: lets nginx bind ports 80 and 443
 
 use std::path::{Path, PathBuf};
@@ -85,7 +85,7 @@ fn elevated_command(exe: &Path, args: &[String], _prompt: &str) -> tokio::proces
     cmd
 }
 
-/// Runs `stackyard <args…>` with administrator rights (one prompt; `prompt`
+/// Runs `cheesenv <args…>` with administrator rights (one prompt; `prompt`
 /// is shown where the OS allows a custom message).
 pub async fn run_elevated(args: &[String], prompt: &str) -> AppResult<()> {
     let exe = self_exe()?;
@@ -137,9 +137,9 @@ pub fn low_ports_granted(_program: &Path) -> bool {
     false
 }
 
-/// Only Stackyard's own nginx: `…/modules/nginx/<version>/…/nginx`.
+/// Only CheesEnv's own nginx: `…/modules/nginx/<version>/…/nginx`.
 #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
-fn is_stackyard_nginx(path: &Path) -> bool {
+fn is_cheesenv_nginx(path: &Path) -> bool {
     path.file_name().is_some_and(|n| n == "nginx")
         && path.ancestors().skip(1).any(|a| {
             a.file_name().is_some_and(|n| n == "nginx") && a.parent().and_then(Path::file_name).is_some_and(|n| n == "modules")
@@ -155,7 +155,7 @@ fn grant_ports_helper(args: &[String]) -> i32 {
     let file = match std::fs::OpenOptions::new().read(true).custom_flags(libc::O_NOFOLLOW).open(path) {
         Ok(f) => f,
         Err(e) => {
-            eprintln!("stackyard: {path}: {e}");
+            eprintln!("cheesenv: {path}: {e}");
             return EXIT_INVALID;
         }
     };
@@ -166,8 +166,8 @@ fn grant_ports_helper(args: &[String]) -> i32 {
     // The invoking user's own file: system programs (owned by root) are refused.
     let caller = std::env::var("PKEXEC_UID").or_else(|_| std::env::var("SUDO_UID")).ok().and_then(|u| u.parse::<u32>().ok());
     let owner_ok = meta.uid() != 0 && caller.is_none_or(|uid| uid == meta.uid());
-    if !meta.is_file() || !is_stackyard_nginx(&real) || !owner_ok {
-        eprintln!("stackyard: not Stackyard's nginx: {}", real.display());
+    if !meta.is_file() || !is_cheesenv_nginx(&real) || !owner_ok {
+        eprintln!("cheesenv: not CheesEnv's nginx: {}", real.display());
         return EXIT_INVALID;
     }
     // SAFETY: zeroed POD out-parameter for fstatvfs on an open descriptor.
@@ -181,7 +181,7 @@ fn grant_ports_helper(args: &[String]) -> i32 {
     // SAFETY: valid descriptor, NUL-terminated name and a buffer of the given length.
     let rc = unsafe { libc::fsetxattr(fd, c"security.capability".as_ptr(), value.as_ptr().cast(), value.len(), 0) };
     if rc != 0 {
-        eprintln!("stackyard: {}: {}", real.display(), std::io::Error::last_os_error());
+        eprintln!("cheesenv: {}: {}", real.display(), std::io::Error::last_os_error());
         return EXIT_IO;
     }
     0
@@ -192,13 +192,13 @@ fn grant_ports_helper(_args: &[String]) -> i32 {
     EXIT_INVALID
 }
 
-/// Lets Stackyard's nginx at `program` bind ports 80 and 443 (one admin prompt).
+/// Lets CheesEnv's nginx at `program` bind ports 80 and 443 (one admin prompt).
 pub async fn grant_low_ports(program: &Path) -> AppResult<()> {
     if !cfg!(target_os = "linux") {
         return Err(AppError::UnsupportedPlatform);
     }
     let args = [GRANT_PORTS_FLAG.to_string(), program.to_string_lossy().into_owned()];
-    run_elevated(&args, "Stackyard needs permission to let nginx use ports 80 and 443.").await?;
+    run_elevated(&args, "CheesEnv needs permission to let nginx use ports 80 and 443.").await?;
     if low_ports_granted(program) {
         Ok(())
     } else {
@@ -230,20 +230,20 @@ mod tests {
     }
 
     #[test]
-    fn only_stackyard_nginx_is_accepted() {
-        assert!(is_stackyard_nginx(Path::new("/home/u/Stackyard/modules/nginx/1.30.5/nginx")));
-        assert!(is_stackyard_nginx(Path::new("/home/u/Stackyard/modules/nginx/1.30.5/sbin/nginx")));
-        assert!(!is_stackyard_nginx(Path::new("/usr/sbin/nginx")));
-        assert!(!is_stackyard_nginx(Path::new("/home/u/Stackyard/modules/php/8.4/nginx")));
-        assert!(!is_stackyard_nginx(Path::new("/home/u/Stackyard/modules/nginx/1.30.5/python3")));
+    fn only_cheesenv_nginx_is_accepted() {
+        assert!(is_cheesenv_nginx(Path::new("/home/u/CheesEnv/modules/nginx/1.30.5/nginx")));
+        assert!(is_cheesenv_nginx(Path::new("/home/u/CheesEnv/modules/nginx/1.30.5/sbin/nginx")));
+        assert!(!is_cheesenv_nginx(Path::new("/usr/sbin/nginx")));
+        assert!(!is_cheesenv_nginx(Path::new("/home/u/CheesEnv/modules/php/8.4/nginx")));
+        assert!(!is_cheesenv_nginx(Path::new("/home/u/CheesEnv/modules/nginx/1.30.5/python3")));
     }
 
     #[test]
     fn helper_ignores_other_invocations() {
         let args = |a: &[&str]| a.iter().map(|s| s.to_string()).collect::<Vec<_>>();
-        assert_eq!(helper_main(&args(&["stackyard"])), None);
-        assert_eq!(helper_main(&args(&["stackyard", "--minimized"])), None);
-        assert_eq!(helper_main(&args(&["stackyard", GRANT_PORTS_FLAG])), Some(EXIT_INVALID));
-        assert_eq!(helper_main(&args(&["stackyard", GRANT_PORTS_FLAG, "/usr/bin/env"])), Some(EXIT_INVALID));
+        assert_eq!(helper_main(&args(&["cheesenv"])), None);
+        assert_eq!(helper_main(&args(&["cheesenv", "--minimized"])), None);
+        assert_eq!(helper_main(&args(&["cheesenv", GRANT_PORTS_FLAG])), Some(EXIT_INVALID));
+        assert_eq!(helper_main(&args(&["cheesenv", GRANT_PORTS_FLAG, "/usr/bin/env"])), Some(EXIT_INVALID));
     }
 }

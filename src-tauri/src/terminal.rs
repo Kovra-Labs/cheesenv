@@ -1,5 +1,5 @@
 //! Built-in terminal (PRD §4): a shell in a pseudo-terminal whose PATH starts
-//! with Stackyard's default runtimes and the tools of the installed modules.
+//! with CheesEnv's default runtimes and the tools of the installed modules.
 
 use std::collections::HashMap;
 use std::io::{Read, Write};
@@ -102,7 +102,7 @@ impl Terminals {
         cmd.env("PATH", path);
         cmd.env("TERM", "xterm-256color");
         cmd.env("COLORTERM", "truecolor");
-        cmd.env("STACKYARD_HOME", home);
+        cmd.env("CHEESENV_HOME", home);
 
         let mut child = pair.slave.spawn_command(cmd).map_err(pty_err)?;
         drop(pair.slave); // the shell holds the only slave handle: EOF once it exits
@@ -211,7 +211,7 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn shell_runs_with_stackyard_path_and_exits() {
+    fn shell_runs_with_cheesenv_path_and_exits() {
         let tmp = tempfile::tempdir().unwrap();
         let terms = Terminals::default();
         let (out_tx, out_rx) = mpsc::channel::<Vec<u8>>();
@@ -240,7 +240,7 @@ mod tests {
             output.extend(chunk);
         }
         let text = String::from_utf8_lossy(&output);
-        assert!(text.contains(&marker.display().to_string()), "PATH holds Stackyard dirs: {text}");
+        assert!(text.contains(&marker.display().to_string()), "PATH holds CheesEnv dirs: {text}");
         assert!(terms.write(id, b"x").is_err(), "session removed after exit");
     }
 }

@@ -85,8 +85,8 @@ async function openTab(project: string | null) {
     theme: {
       background: cssVar('--code-bg', '#0d1524'),
       foreground: cssVar('--code-ink', '#d6e2f0'),
-      cursor: cssVar('--primary', '#2196f3'),
-      selectionBackground: 'rgba(33, 150, 243, 0.35)',
+      cursor: cssVar('--primary', '#ecbb01'),
+      selectionBackground: 'rgba(236, 187, 1, 0.3)',
     },
   });
   const fit = new FitAddon();

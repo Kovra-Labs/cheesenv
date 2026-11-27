@@ -300,7 +300,7 @@ fn spawn(launch: &Launch) -> AppResult<Child> {
 
 fn append_log(path: &std::path::Path, msg: &str) {
     use std::io::Write;
-    let line = format!("[stackyard {}] {msg}\n", unix_now());
+    let line = format!("[cheesenv {}] {msg}\n", unix_now());
     if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(path) {
         let _ = f.write_all(line.as_bytes());
     }

@@ -34,7 +34,7 @@ use crate::state::AppState;
 use crate::supervisor::Supervisor;
 
 /// Runs the elevated hosts-file helper when the process was started as one
-/// (`stackyard --hosts-sync …`); returns its exit code, or `None` to start the app.
+/// (`cheesenv --hosts-sync …`); returns its exit code, or `None` to start the app.
 pub fn run_helper() -> Option<i32> {
     admin::helper_main(&std::env::args().collect::<Vec<_>>())
 }
@@ -55,7 +55,7 @@ pub fn run() {
             let lang = settings.language.clone();
 
             let client = reqwest::Client::builder()
-                .user_agent(format!("Stackyard/{}", app.package_info().version))
+                .user_agent(format!("CheesEnv/{}", app.package_info().version))
                 .connect_timeout(Duration::from_secs(15))
                 .build()?;
 
@@ -86,7 +86,7 @@ pub fn run() {
                     let _ = panels_handle.emit(commands::EVENT_PANELS_SETUP, p);
                 };
                 for e in commands::ensure_panels(&state, &emit).await {
-                    eprintln!("[stackyard] built-in panel {e}");
+                    eprintln!("[cheesenv] built-in panel {e}");
                 }
                 let _ = panels_handle.emit(commands::EVENT_SERVICES_CHANGED, ());
             });
@@ -99,7 +99,7 @@ pub fn run() {
                     let id = service_id(&m.name, &m.version);
                     if m.service.is_some() && settings.service(&id).autostart {
                         if let Err(e) = commands::start_service_inner(&state, &id).await {
-                            eprintln!("[stackyard] autostart {id} failed: {e}");
+                            eprintln!("[cheesenv] autostart {id} failed: {e}");
                         }
                     }
                 }
@@ -107,7 +107,7 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| {
-            // Closing the window keeps Stackyard (and services) running in the tray.
+            // Closing the window keeps CheesEnv (and services) running in the tray.
             if let WindowEvent::CloseRequested { api, .. } = event {
                 api.prevent_close();
                 let _ = window.hide();
@@ -152,7 +152,7 @@ pub fn run() {
             updater::install_update,
         ])
         .build(tauri::generate_context!())
-        .expect("error while building Stackyard")
+        .expect("error while building CheesEnv")
         .run(|app, event| {
             // Quitting stops every service first, then exits for real.
             if let RunEvent::ExitRequested { api, code, .. } = event {
@@ -171,7 +171,7 @@ pub fn run() {
 }
 
 /// End-to-end check against a real registry (network + real binaries):
-/// `STACKYARD_E2E_REGISTRY=http://127.0.0.1:8765 cargo test e2e -- --ignored`
+/// `CHEESENV_E2E_REGISTRY=http://127.0.0.1:8765 cargo test e2e -- --ignored`
 #[cfg(test)]
 mod e2e {
     use super::*;
@@ -179,11 +179,11 @@ mod e2e {
     use crate::supervisor::Status;
 
     fn state(dir: &std::path::Path) -> AppState {
-        let settings = Settings { data_dir: dir.join("Stackyard"), ..Settings::default() };
+        let settings = Settings { data_dir: dir.join("CheesEnv"), ..Settings::default() };
         AppState {
             settings: RwLock::new(settings),
             settings_path: dir.join("settings.json"),
-            registry_url: std::env::var("STACKYARD_E2E_REGISTRY").unwrap_or_default(),
+            registry_url: std::env::var("CHEESENV_E2E_REGISTRY").unwrap_or_default(),
             client: reqwest::Client::new(),
             supervisor: Supervisor::new(Arc::new(|s| eprintln!("status {} {:?}", s.id, s.status))),
             busy_modules: std::sync::Mutex::new(HashSet::new()),
@@ -197,7 +197,7 @@ mod e2e {
 
     /// Installs `version` of a module (the latest when `None`); returns its service id.
     async fn install_version(st: &AppState, name: &str, version: Option<&str>) -> String {
-        let url = std::env::var("STACKYARD_E2E_REGISTRY").expect("STACKYARD_E2E_REGISTRY");
+        let url = std::env::var("CHEESENV_E2E_REGISTRY").expect("CHEESENV_E2E_REGISTRY");
         let layout = st.layout();
         let reg = Registry { client: &st.client, base_url: &url, layout: &layout };
         let idx = reg.index(true).await.expect("signed index");
@@ -217,7 +217,7 @@ mod e2e {
     #[tokio::test]
     #[ignore]
     async fn install_start_serve_stop() {
-        if std::env::var_os("STACKYARD_E2E_REGISTRY").is_none() {
+        if std::env::var_os("CHEESENV_E2E_REGISTRY").is_none() {
             return;
         }
         let tmp = tempfile::tempdir().unwrap();
@@ -266,7 +266,7 @@ mod e2e {
     #[tokio::test]
     #[ignore]
     async fn project_vhosts_serve_php() {
-        if std::env::var_os("STACKYARD_E2E_REGISTRY").is_none() {
+        if std::env::var_os("CHEESENV_E2E_REGISTRY").is_none() {
             return;
         }
         let tmp = tempfile::tempdir().unwrap();
@@ -349,7 +349,7 @@ mod e2e {
     #[tokio::test]
     #[ignore]
     async fn runtimes_on_path() {
-        if std::env::var_os("STACKYARD_E2E_REGISTRY").is_none() {
+        if std::env::var_os("CHEESENV_E2E_REGISTRY").is_none() {
             return;
         }
         let tmp = tempfile::tempdir().unwrap();
@@ -381,7 +381,7 @@ mod e2e {
     #[tokio::test]
     #[ignore]
     async fn more_services() {
-        if std::env::var_os("STACKYARD_E2E_REGISTRY").is_none() {
+        if std::env::var_os("CHEESENV_E2E_REGISTRY").is_none() {
             return;
         }
         let tmp = tempfile::tempdir().unwrap();
@@ -426,8 +426,8 @@ mod e2e {
 
         assert_eq!(run(&ids[2], "bin/redis-cli", &["-p", "56379", "PING"], &[]), (true, "PONG".into()));
 
-        std::fs::write(layout.www().join("stackyard-e2e.html"), "served by apache").unwrap();
-        let body = reqwest::get("http://127.0.0.1:58081/stackyard-e2e.html").await.unwrap().text().await.unwrap();
+        std::fs::write(layout.www().join("cheesenv-e2e.html"), "served by apache").unwrap();
+        let body = reqwest::get("http://127.0.0.1:58081/cheesenv-e2e.html").await.unwrap().text().await.unwrap();
         assert_eq!(body, "served by apache");
         let denied = reqwest::get("http://127.0.0.1:58081/.htaccess").await.unwrap().status();
         assert!(denied == 403 || denied == 404, ".ht* files are not served");
@@ -442,7 +442,7 @@ mod e2e {
     #[tokio::test]
     #[ignore]
     async fn database_brings_its_panel() {
-        if std::env::var_os("STACKYARD_E2E_REGISTRY").is_none() {
+        if std::env::var_os("CHEESENV_E2E_REGISTRY").is_none() {
             return;
         }
         let tmp = tempfile::tempdir().unwrap();
@@ -502,7 +502,7 @@ mod e2e {
     #[tokio::test]
     #[ignore]
     async fn panel_update_keeps_port_and_data() {
-        if std::env::var_os("STACKYARD_E2E_REGISTRY").is_none() {
+        if std::env::var_os("CHEESENV_E2E_REGISTRY").is_none() {
             return;
         }
         let tmp = tempfile::tempdir().unwrap();
@@ -547,7 +547,7 @@ mod e2e {
     #[tokio::test]
     #[ignore]
     async fn panels_are_built_in() {
-        if std::env::var_os("STACKYARD_E2E_REGISTRY").is_none() {
+        if std::env::var_os("CHEESENV_E2E_REGISTRY").is_none() {
             return;
         }
         let tmp = tempfile::tempdir().unwrap();
@@ -576,7 +576,7 @@ mod e2e {
     #[tokio::test]
     #[ignore]
     async fn databases_init_auth_restart() {
-        if std::env::var_os("STACKYARD_E2E_REGISTRY").is_none() {
+        if std::env::var_os("CHEESENV_E2E_REGISTRY").is_none() {
             return;
         }
         let tmp = tempfile::tempdir().unwrap();
@@ -727,7 +727,7 @@ mod e2e {
     #[tokio::test]
     #[ignore]
     async fn panels_manage_databases() {
-        if std::env::var_os("STACKYARD_E2E_REGISTRY").is_none() {
+        if std::env::var_os("CHEESENV_E2E_REGISTRY").is_none() {
             return;
         }
         let tmp = tempfile::tempdir().unwrap();
