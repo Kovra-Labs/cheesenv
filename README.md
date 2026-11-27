@@ -39,9 +39,9 @@ CheesEnv runs on Windows, macOS, and Linux. It is free and open source under the
 - **Projects on `.test` domains**: every folder in your projects folder opens at `<folder>.test`, with a PHP version per project and optional local HTTPS.
 - **Built-in terminal**: tabs with every installed tool (`node`, `php`, `mysql`, `psql`, `redis-cli`, …) ready to use.
 - **Logs**: filter and follow the output of every service.
-- **System tray**: closing the window keeps your services running; quit from the tray icon to stop them all.
+- **System tray**: closing the window keeps your services running; quit from the tray icon to stop them all. Optionally start CheesEnv in the tray when you log in.
 - **Automatic updates** with a list of what changed, shown in your language.
-- **English and Indonesian** interface, with light, dark, and system themes.
+- **English and Indonesian** interface, with light, dark, and system themes and a choice of accent colours.
 
 ## Available modules
 
@@ -52,6 +52,7 @@ CheesEnv runs on Windows, macOS, and Linux. It is free and open source under the
 | PHP | Runtime | 8.4, 8.3 | Windows, macOS, Linux |
 | Node.js | Runtime | 26 LTS, 24 LTS | Windows, macOS, Linux |
 | Python | Runtime | 3.15, 3.14 | Windows, macOS, Linux |
+| Composer (with its own PHP CLI) | Tools | 2 | Windows, macOS, Linux |
 | MySQL | Database | 8.4 LTS | Windows, macOS 15+, Linux x64 |
 | MariaDB | Database | 12.3 LTS, 11.8 LTS | Windows, Linux x64 |
 | PostgreSQL | Database | 18, 17 | Windows, macOS, Linux |
@@ -99,7 +100,7 @@ Every folder in `~/CheesEnv/www` is a project that opens at `<folder>.test`. Cre
 
 ### Node.js and Python in your own terminal
 
-The first Node.js or Python version you install becomes the **default**; change it with **Make default** in the Module Hub. To use `node`, `npm`, `python`, or `pip` from any terminal, add CheesEnv's folder to your `PATH` once. **Settings → Terminal (PATH)** shows a ready-to-copy line, for example:
+The first Node.js or Python version you install becomes the **default**; change it with **Make default** in the Module Hub. To use `node`, `npm`, `python`, `pip`, or `composer` from any terminal, add CheesEnv's folder to your `PATH` once. **Settings → Terminal (PATH)** shows a ready-to-copy line, for example:
 
 ```bash
 export PATH="$HOME/CheesEnv/bin:$PATH"          # bash/zsh: add to ~/.bashrc or ~/.zshrc

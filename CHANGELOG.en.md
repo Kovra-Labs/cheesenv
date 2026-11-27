@@ -5,6 +5,13 @@ Keep both files in step: same versions, same entries.
 
 ## [Unreleased]
 
+### Added
+
+- Accent colour choice (Cheese, Blue, Teal, Violet) in Settings → General.
+- "Run when the computer starts" option: CheesEnv opens in the tray at login.
+- Composer module in the Module Hub, with its own PHP CLI; the `composer`
+  command is available in the terminal.
+
 ## [0.1.0] - 2026-11-27
 
 ### Added
