@@ -58,10 +58,17 @@ const themes: { value: Settings['theme']; icon: IconName }[] = [
   { value: 'light', icon: 'sun' },
   { value: 'dark', icon: 'moon' },
 ];
+const accents: Settings['accent'][] = ['cheese', 'blue', 'teal', 'violet'];
 
 /** Language, theme and toggles apply immediately. */
 async function patch(update: Partial<Settings>) {
   await attempt(async () => applySettings(await api.updateSettings(update)));
+}
+
+/** On failure the switch snaps back to the saved value. */
+async function toggleLaunchAtLogin(input: HTMLInputElement) {
+  await patch({ launch_at_login: input.checked });
+  input.checked = store.settings?.launch_at_login ?? false;
 }
 
 const historyDialog = ref<InstanceType<typeof ChangelogDialog> | null>(null);
@@ -187,6 +194,33 @@ async function saveDataDir() {
           </label>
         </div>
       </div>
+
+      <div class="set-row">
+        <div class="set-text">
+          <strong id="accent-label">{{ t('settings.accent') }}</strong>
+        </div>
+        <div class="swatches" role="radiogroup" aria-labelledby="accent-label">
+          <label
+            v-for="a in accents"
+            :key="a"
+            class="swatch"
+            :class="{ active: store.settings?.accent === a }"
+            :data-accent="a"
+            :title="t(`settings.accents.${a}`)"
+          >
+            <input
+              class="sr-only"
+              type="radio"
+              name="accent"
+              :value="a"
+              :checked="store.settings?.accent === a"
+              @change="patch({ accent: a })"
+            />
+            <span class="sr-only">{{ t(`settings.accents.${a}`) }}</span>
+            <AppIcon v-if="store.settings?.accent === a" name="check" :size="16" />
+          </label>
+        </div>
+      </div>
     </section>
 
     <section class="card group">
@@ -207,6 +241,18 @@ async function saveDataDir() {
           type="checkbox"
           :checked="store.settings?.auto_restart"
           @change="patch({ auto_restart: ($event.target as HTMLInputElement).checked })"
+        />
+      </label>
+      <label class="set-row clickable">
+        <div class="set-text">
+          <strong>{{ t('settings.launchAtLoginTitle') }}</strong>
+          <span class="hint">{{ t('settings.launchAtLogin') }}</span>
+        </div>
+        <input
+          class="switch"
+          type="checkbox"
+          :checked="store.settings?.launch_at_login"
+          @change="toggleLaunchAtLogin($event.target as HTMLInputElement)"
         />
       </label>
     </section>
@@ -408,6 +454,43 @@ async function saveDataDir() {
 
 .seg-item:focus-within {
   box-shadow: 0 0 0 3px var(--ring);
+}
+
+.swatches {
+  display: inline-flex;
+  gap: 10px;
+}
+
+/* Each swatch shows its own accent: data-accent re-scopes the --accent palette. */
+.swatch {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--accent-on);
+  cursor: pointer;
+  box-shadow:
+    0 0 0 2px var(--surface),
+    0 0 0 3px var(--line-strong);
+  transition: box-shadow var(--dur) var(--ease), transform var(--dur) var(--ease);
+}
+
+.swatch:hover {
+  transform: scale(1.08);
+}
+
+.swatch.active {
+  box-shadow:
+    0 0 0 2px var(--surface),
+    0 0 0 4px var(--accent);
+}
+
+.swatch:focus-within {
+  box-shadow:
+    0 0 0 2px var(--surface),
+    0 0 0 5px var(--ring);
 }
 
 .nowrap {

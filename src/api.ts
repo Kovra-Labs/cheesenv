@@ -14,12 +14,16 @@ export interface AppInfo {
 export interface Settings {
   language: 'id' | 'en';
   theme: 'system' | 'light' | 'dark';
+  accent: 'cheese' | 'blue' | 'teal' | 'violet';
   data_dir: string;
   auto_restart: boolean;
   check_updates: boolean;
+  launch_at_login: boolean;
 }
 
-export type SettingsUpdate = Partial<Pick<Settings, 'language' | 'theme' | 'data_dir' | 'auto_restart' | 'check_updates'>>;
+export type SettingsUpdate = Partial<
+  Pick<Settings, 'language' | 'theme' | 'accent' | 'data_dir' | 'auto_restart' | 'check_updates' | 'launch_at_login'>
+>;
 
 export interface ModuleView {
   name: string;

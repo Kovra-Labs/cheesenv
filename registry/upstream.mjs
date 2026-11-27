@@ -279,6 +279,19 @@ Object.assign(sources, {
     return { versions: [{ version: v, assets }] };
   },
 
+  /** Composer itself is updated; the bundled static PHP CLI stays as pinned. */
+  async composer(manifest) {
+    const { stable } = await json('https://getcomposer.org/versions');
+    const v = stable.map((s) => s.version).filter(isStable).sort(cmp).at(-1);
+    if (!v) throw new Error('no stable Composer release');
+    const url = `https://getcomposer.org/download/${v}/composer.phar`;
+    const sha = (await text(`${url}.sha256sum`)).trim().split(/\s+/)[0];
+    if (!/^[0-9a-f]{64}$/.test(sha)) throw new Error(`bad checksum file for Composer ${v}`);
+    const assets = {};
+    for (const [key, a] of Object.entries(newest(manifest).assets)) assets[key] = { ...a, url, sha256: sha };
+    return { versions: [{ version: v, assets }] };
+  },
+
   /** pgAdmin 4 from PyPI on Python 3.12; a new pgAdmin also relocks its pip packages. */
   async pgadmin(manifest) {
     const version = await pgadminRelease();

@@ -12,7 +12,7 @@ use crate::settings::{ServiceSettings, Settings, SettingsUpdate};
 use crate::state::AppState;
 use crate::supervisor::Status;
 use crate::terminal::Terminals;
-use crate::{hosts, logs, panel, projects, runtimes, terminal, tls, tray};
+use crate::{autostart, hosts, logs, panel, projects, runtimes, terminal, tls, tray};
 
 pub const EVENT_SERVICE_STATUS: &str = "service-status";
 pub const EVENT_SERVICES_CHANGED: &str = "services-changed";
@@ -59,6 +59,10 @@ pub async fn update_settings(app: AppHandle, state: State<'_, AppState>, update:
     }
     let after = state.update_settings(|s| {
         s.apply(update)?;
+        // Before saving: if the OS refuses, the setting stays as it was.
+        if s.launch_at_login != before.launch_at_login {
+            autostart::sync(&app, s.launch_at_login)?;
+        }
         Ok(s.clone())
     })?;
     state.layout().ensure()?;

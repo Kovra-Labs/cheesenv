@@ -26,6 +26,13 @@ Cara menulis:
 
 ## [Belum dirilis]
 
+### Ditambahkan
+
+- Pilihan warna aksen (Keju, Biru, Teal, Ungu) di Pengaturan → Umum.
+- Opsi "Jalankan saat komputer menyala": CheesEnv terbuka di tray saat login.
+- Modul Composer di Module Hub, lengkap dengan PHP CLI sendiri; perintah
+  `composer` tersedia di terminal.
+
 ## [0.1.0] - 2026-11-27
 
 ### Ditambahkan

@@ -9,15 +9,13 @@
   --ink-2: #556274;
   --ink-3: #8a96a8;
 
-  /* Brand yellow #ECBB01: too light for white text or small text on white,
-     so text on it is near-black and primary-colored text uses a deep amber. */
-  --primary: #ecbb01;
-  --primary-hover: #d9ab00;
-  --primary-active: #c49a00;
-  --primary-text: #7a5a00;
-  --primary-soft: #fdf5d3;
-  --on-primary: #1f1600;
-  --ring: rgb(236 187 1 / 0.45);
+  --primary: var(--accent);
+  --primary-hover: var(--accent-hover);
+  --primary-active: var(--accent-active);
+  --primary-text: var(--accent-text);
+  --primary-soft: var(--accent-soft);
+  --on-primary: var(--accent-on);
+  --ring: var(--accent-ring);
 
   --success: #15803d;
   --success-soft: #dcfce7;
@@ -57,11 +55,10 @@
     --ink: #e7eef8;
     --ink-2: #9fb0c6;
     --ink-3: #6c7d96;
-    --primary-hover: #f5c92e;
-    --primary-active: #d9ab00;
-    --primary-text: #f5cd3d;
-    --primary-soft: rgb(236 187 1 / 0.14);
-    --ring: rgb(236 187 1 / 0.45);
+    --primary-hover: var(--accent-hover-dark);
+    --primary-active: var(--accent-active-dark);
+    --primary-text: var(--accent-text-dark);
+    --primary-soft: var(--accent-soft-dark);
     --success: #4ade80;
     --success-soft: rgb(34 197 94 / 0.14);
     --warn: #fb923c;
@@ -87,11 +84,10 @@
   --ink: #e7eef8;
   --ink-2: #9fb0c6;
   --ink-3: #6c7d96;
-  --primary-hover: #f5c92e;
-  --primary-active: #d9ab00;
-  --primary-text: #f5cd3d;
-  --primary-soft: rgb(236 187 1 / 0.14);
-  --ring: rgb(236 187 1 / 0.45);
+  --primary-hover: var(--accent-hover-dark);
+  --primary-active: var(--accent-active-dark);
+  --primary-text: var(--accent-text-dark);
+  --primary-soft: var(--accent-soft-dark);
   --success: #4ade80;
   --success-soft: rgb(34 197 94 / 0.14);
   --warn: #fb923c;
@@ -104,6 +100,68 @@
   --shadow-md: 0 6px 18px rgb(0 0 0 / 0.35);
   --shadow-lg: 0 20px 56px rgb(0 0 0 / 0.55);
   color-scheme: dark;
+}
+
+:root,
+[data-accent='cheese'] {
+  /* Accent palettes, chosen in Settings; the `--primary*` colours above map
+     onto them and `-dark` values serve the dark theme. They also apply on any
+     element with data-accent (the Settings swatches). Every pair keeps WCAG AA.
+     Default: brand yellow #ECBB01, too light for white text or small text on
+     white, so text on it is near-black and accent-coloured text a deep amber. */
+  --accent: #ecbb01;
+  --accent-hover: #d9ab00;
+  --accent-active: #c49a00;
+  --accent-text: #7a5a00;
+  --accent-soft: #fdf5d3;
+  --accent-on: #1f1600;
+  --accent-ring: rgb(236 187 1 / 0.45);
+  --accent-hover-dark: #f5c92e;
+  --accent-active-dark: #d9ab00;
+  --accent-text-dark: #f5cd3d;
+  --accent-soft-dark: rgb(236 187 1 / 0.14);
+}
+
+[data-accent='blue'] {
+  --accent: #2563eb;
+  --accent-hover: #1d4ed8;
+  --accent-active: #1e40af;
+  --accent-text: #1d4ed8;
+  --accent-soft: #dbeafe;
+  --accent-on: #ffffff;
+  --accent-ring: rgb(37 99 235 / 0.4);
+  --accent-hover-dark: #1d4ed8;
+  --accent-active-dark: #1e40af;
+  --accent-text-dark: #93c5fd;
+  --accent-soft-dark: rgb(59 130 246 / 0.16);
+}
+
+[data-accent='teal'] {
+  --accent: #0f766e;
+  --accent-hover: #115e59;
+  --accent-active: #134e4a;
+  --accent-text: #0f766e;
+  --accent-soft: #ccfbf1;
+  --accent-on: #ffffff;
+  --accent-ring: rgb(13 148 136 / 0.4);
+  --accent-hover-dark: #115e59;
+  --accent-active-dark: #134e4a;
+  --accent-text-dark: #5eead4;
+  --accent-soft-dark: rgb(20 184 166 / 0.15);
+}
+
+[data-accent='violet'] {
+  --accent: #7c3aed;
+  --accent-hover: #6d28d9;
+  --accent-active: #5b21b6;
+  --accent-text: #6d28d9;
+  --accent-soft: #ede9fe;
+  --accent-on: #ffffff;
+  --accent-ring: rgb(124 58 237 / 0.4);
+  --accent-hover-dark: #6d28d9;
+  --accent-active-dark: #5b21b6;
+  --accent-text-dark: #c4b5fd;
+  --accent-soft-dark: rgb(139 92 246 / 0.18);
 }
 
 *,
@@ -638,7 +696,8 @@ a {
   position: absolute;
   inset: 0 auto 0 0;
   border-radius: inherit;
-  background: linear-gradient(90deg, var(--primary), #f7d65c);
+  background: var(--primary);
+  background: linear-gradient(90deg, var(--primary), color-mix(in srgb, var(--primary) 65%, white));
   transition: width 300ms var(--ease);
 }
 

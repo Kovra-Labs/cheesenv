@@ -18,10 +18,14 @@ pub struct ServiceSettings {
 pub struct Settings {
     pub language: String,
     pub theme: String,
+    /// Accent colour of the interface (see `ACCENTS`).
+    pub accent: String,
     pub data_dir: PathBuf,
     pub auto_restart: bool,
     /// Check GitHub Releases for a new app version at startup.
     pub check_updates: bool,
+    /// Start CheesEnv (hidden in the tray) when the user logs in.
+    pub launch_at_login: bool,
     pub services: BTreeMap<String, ServiceSettings>,
     /// Default version per runtime module (e.g. `node` → `26.13.1`).
     pub runtimes: BTreeMap<String, String>,
@@ -34,15 +38,20 @@ impl Default for Settings {
         Self {
             language: "id".into(),
             theme: "system".into(),
+            accent: ACCENTS[0].into(),
             data_dir: default_data_dir(),
             auto_restart: true,
             check_updates: true,
+            launch_at_login: false,
             services: BTreeMap::new(),
             runtimes: BTreeMap::new(),
             project_php: BTreeMap::new(),
         }
     }
 }
+
+/// Accent colours the interface ships styles for; the first is the default.
+pub const ACCENTS: [&str; 4] = ["cheese", "blue", "teal", "violet"];
 
 fn default_data_dir() -> PathBuf {
     std::env::var_os("HOME")
@@ -57,9 +66,11 @@ fn default_data_dir() -> PathBuf {
 pub struct SettingsUpdate {
     pub language: Option<String>,
     pub theme: Option<String>,
+    pub accent: Option<String>,
     pub data_dir: Option<PathBuf>,
     pub auto_restart: Option<bool>,
     pub check_updates: Option<bool>,
+    pub launch_at_login: Option<bool>,
 }
 
 impl Settings {
@@ -93,6 +104,12 @@ impl Settings {
             }
             self.theme = theme;
         }
+        if let Some(accent) = u.accent {
+            if !ACCENTS.contains(&accent.as_str()) {
+                return Err(AppError::InvalidInput("accent".into()));
+            }
+            self.accent = accent;
+        }
         if let Some(dir) = u.data_dir {
             if !dir.is_absolute() {
                 return Err(AppError::InvalidInput("data_dir".into()));
@@ -104,6 +121,9 @@ impl Settings {
         }
         if let Some(v) = u.check_updates {
             self.check_updates = v;
+        }
+        if let Some(v) = u.launch_at_login {
+            self.launch_at_login = v;
         }
         Ok(())
     }
@@ -168,21 +188,12 @@ mod tests {
     #[test]
     fn apply_validates() {
         let mut s = Settings::default();
-        let bad = SettingsUpdate {
-            language: Some("fr".into()),
-            theme: None,
-            data_dir: None,
-            auto_restart: None,
-            check_updates: None,
-        };
-        assert!(s.apply(bad).is_err());
-        let rel = SettingsUpdate {
-            language: None,
-            theme: None,
-            data_dir: Some("relative".into()),
-            auto_restart: None,
-            check_updates: None,
-        };
-        assert!(s.apply(rel).is_err());
+        let update = |json: &str| serde_json::from_str::<SettingsUpdate>(json).unwrap();
+        assert!(s.apply(update(r#"{"language":"fr"}"#)).is_err());
+        assert!(s.apply(update(r#"{"data_dir":"relative"}"#)).is_err());
+        assert!(s.apply(update(r#"{"accent":"neon"}"#)).is_err());
+        assert_eq!(s, Settings::default(), "rejected updates change nothing");
+        s.apply(update(r#"{"accent":"teal","launch_at_login":true}"#)).unwrap();
+        assert_eq!((s.accent.as_str(), s.launch_at_login), ("teal", true));
     }
 }

@@ -70,6 +70,7 @@ export function applySettings(s: Settings) {
   i18n.global.locale.value = s.language;
   document.documentElement.lang = s.language;
   document.documentElement.dataset.theme = s.theme;
+  document.documentElement.dataset.accent = s.accent;
 }
 
 export async function reloadServices() {
